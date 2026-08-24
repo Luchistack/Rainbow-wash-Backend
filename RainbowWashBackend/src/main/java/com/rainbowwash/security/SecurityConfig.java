@@ -33,27 +33,25 @@ public class SecurityConfig {
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
         return authConfig.getAuthenticationManager();
     }
-
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
-                .cors(Customizer.withDefaults()) // Ensure CORS is enabled
+                .cors(org.springframework.security.config.Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Allow login for both with and without /api prefix
+                        // Use antMatchers/requestMatchers broadly for auth and public endpoints
                         .requestMatchers("/auth/**", "/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/services/**", "/api/services/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/products/**", "/api/products/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/bookings/**", "/api/bookings/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/orders/**", /"api/orders/**").permitAll()
 
-                        // Allow public reading of services and products
-                        .requestMatchers(HttpMethod.GET, "/services", "/api/services", "/services/**", "/api/services/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/products", "/api/products").permitAll()
+                // Allow CORS pre-flight OPTIONS requests explicitly
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // Allow public bookings and orders
-                        .requestMatchers(HttpMethod.POST, "/bookings", "/api/bookings").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/orders", "/api/orders").permitAll()
-
-                        .requestMatchers("/admin/**", "/api/admin/**").hasRole("ADMIN")
-                        .anyRequest().authenticated()
+                .requestMatchers("/admin/**", "/api/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated()
                 );
 
         http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
