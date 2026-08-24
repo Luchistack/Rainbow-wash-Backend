@@ -38,20 +38,21 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
+                .cors(Customizer.withDefaults()) // Ensure CORS is enabled
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Allow both /auth/** and /api/auth/** so login always goes through
+                        // Allow login for both with and without /api prefix
                         .requestMatchers("/auth/**", "/api/auth/**").permitAll()
 
-                        // Customers browsing the public site need to read services and products without logging in
-                        .requestMatchers(HttpMethod.GET, "/api/services", "/api/services/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
+                        // Allow public reading of services and products
+                        .requestMatchers(HttpMethod.GET, "/services", "/api/services", "/services/**", "/api/services/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/products", "/api/products").permitAll()
 
-                        // Customers submitting a booking or a laundry order aren't logged in either.
-                        .requestMatchers(HttpMethod.POST, "/api/bookings").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/orders").permitAll()
+                        // Allow public bookings and orders
+                        .requestMatchers(HttpMethod.POST, "/bookings", "/api/bookings").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/orders", "/api/orders").permitAll()
 
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/admin/**", "/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 );
 
