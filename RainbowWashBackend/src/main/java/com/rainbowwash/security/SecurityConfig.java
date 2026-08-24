@@ -40,14 +40,10 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Only /login is public — change-password (and any future /api/auth/**
-                        // route) now correctly requires a valid JWT via anyRequest().authenticated().
-                        .requestMatchers("/api/auth/login").permitAll()
+                        // Allow both /auth/** and /api/auth/** so login always goes through
+                        .requestMatchers("/auth/**", "/api/auth/**").permitAll()
 
-                        // Customers browsing the public site need to read services and products
-                        // without logging in — but creating/editing/deleting them (POST/PUT/DELETE)
-                        // now correctly falls through to anyRequest().authenticated(), which was NOT
-                        // true before (the old rule permitted all methods, not just GET).
+                        // Customers browsing the public site need to read services and products without logging in
                         .requestMatchers(HttpMethod.GET, "/api/services", "/api/services/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
 
