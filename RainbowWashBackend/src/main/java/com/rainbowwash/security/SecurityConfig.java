@@ -41,17 +41,17 @@ public class SecurityConfig {
                 .cors(org.springframework.security.config.Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
-                        .requestMatchers("/auth/**", "/api/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/services/**", "/api/services/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/products/**", "/api/products/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/bookings/**", "/api/bookings/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/orders/**", "/api/orders/**").permitAll()
+                        // Permit EVERYTHING under auth, services, products, bookings, and orders regardless of prefix
+                        .requestMatchers("/**/auth/**", "/auth/**", "/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/**/services/**", "/services/**", "/api/services/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/**/products/**", "/products/**", "/api/products/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/**/bookings/**", "/bookings/**", "/api/bookings/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/**/orders/**", "/orders/**", "/api/orders/**").permitAll()
 
                         // Allow CORS pre-flight OPTIONS requests explicitly
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        .requestMatchers("/admin/**", "/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/**/admin/**", "/admin/**", "/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 );
 
