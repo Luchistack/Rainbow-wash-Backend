@@ -11,6 +11,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -18,10 +19,13 @@ public class SecurityConfig {
 
     private final JwtTokenProvider tokenProvider;
     private final UserDetailsService userDetailsService;
+    private final CorsConfigurationSource corsConfigurationSource;
 
-    public SecurityConfig(JwtTokenProvider tokenProvider, UserDetailsService userDetailsService) {
+    public SecurityConfig(JwtTokenProvider tokenProvider, UserDetailsService userDetailsService,
+                          CorsConfigurationSource corsConfigurationSource) {
         this.tokenProvider = tokenProvider;
         this.userDetailsService = userDetailsService;
+        this.corsConfigurationSource = corsConfigurationSource;
     }
 
     @Bean
@@ -38,20 +42,16 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
-                .cors(org.springframework.security.config.Customizer.withDefaults())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Permit EVERYTHING under auth, services, products, bookings, and orders regardless of prefix
-                        .requestMatchers("/**/auth/**", "/auth/**", "/api/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/**/services/**", "/services/**", "/api/services/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/**/products/**", "/products/**", "/api/products/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/**/bookings/**", "/bookings/**", "/api/bookings/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/**/orders/**", "/orders/**", "/api/orders/**").permitAll()
-
-                        // Allow CORS pre-flight OPTIONS requests explicitly
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                        .requestMatchers("/**/admin/**", "/admin/**", "/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/services", "/api/services/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/bookings").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/orders").permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 );
 
