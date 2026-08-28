@@ -1,0 +1,2316 @@
+
+===== src/main/java/com/rainbowwash/config/AppConfig.java =====
+package com.rainbowwash.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+@Configuration
+public class AppConfig {
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+
+        return new BCryptPasswordEncoder();
+    }
+
+}
+
+===== src/main/java/com/rainbowwash/config/CorsConfig.java =====
+package com.rainbowwash.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
+
+@Configuration
+public class CorsConfig {
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOriginPatterns(List.of("*"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("*"));
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+}
+===== src/main/java/com/rainbowwash/controller/AdminController.java =====
+package com.rainbowwash.controller;
+
+import com.rainbowwash.dto.CreateEmployeeRequest;
+import com.rainbowwash.dto.EmployeeSummary;
+import com.rainbowwash.service.EmployeeService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+
+// Everything here is already locked to ADMIN-only by SecurityConfig
+// (.requestMatchers("/api/admin/**").hasRole("ADMIN")), so no extra
+// @PreAuthorize is needed on the individual methods.
+@RestController
+@RequestMapping("/api/admin")
+public class AdminController {
+
+    private final EmployeeService employeeService;
+
+    public AdminController(EmployeeService employeeService) {
+        this.employeeService = employeeService;
+    }
+
+    @PostMapping("/create-employee")
+    public ResponseEntity<?> createEmployee(@Valid @RequestBody CreateEmployeeRequest request) {
+        try {
+            String tempPassword = employeeService.provisionEmployee(request);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Account created for " + request.getFullName(),
+                    "email", request.getEmail(),
+                    "tempPassword", tempPassword
+            ));
+        } catch (RuntimeException e) {
+            // e.g. "An account with this email already exist."
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to create employee: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/employees")
+    public ResponseEntity<List<EmployeeSummary>> getEmployees() {
+        return ResponseEntity.ok(employeeService.listEmployees());
+    }
+
+    @PostMapping("/reset-password/{id}")
+    public ResponseEntity<?> resetPassword(@PathVariable Long id) {
+        try {
+            String tempPassword = employeeService.resetPassword(id);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Password reset successfully.",
+                    "tempPassword", tempPassword
+            ));
+        } catch (RuntimeException e) {
+            // e.g. "User not found"
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to reset password: " + e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/employees/{id}")
+    public ResponseEntity<?> deleteEmployee(@PathVariable Long id) {
+        try {
+            employeeService.deleteEmployee(id);
+            return ResponseEntity.ok(Map.of("message", "Account deleted."));
+        } catch (RuntimeException e) {
+            // e.g. "User not found" or "Admin accounts cannot be deleted from this screen."
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to delete account: " + e.getMessage()));
+        }
+    }
+}
+===== src/main/java/com/rainbowwash/controller/AuthController.java =====
+package com.rainbowwash.controller;
+
+import com.rainbowwash.dto.ChangePasswordRequest;
+import com.rainbowwash.dto.LoginRequest;
+import com.rainbowwash.model.User;
+import com.rainbowwash.repository.UserRepository;
+import com.rainbowwash.security.JwtTokenProvider;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/auth")
+public class AuthController {
+
+    private final AuthenticationManager authenticationManager;
+    private final JwtTokenProvider tokenProvider;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    public AuthController(AuthenticationManager authenticationManager, JwtTokenProvider tokenProvider,
+                          UserRepository userRepository, PasswordEncoder passwordEncoder) {
+        this.authenticationManager = authenticationManager;
+        this.tokenProvider = tokenProvider;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
+        try {
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            loginRequest.getEmail(),
+                            loginRequest.getPassword()
+                    )
+            );
+
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            String jwt = tokenProvider.generateToken(authentication);
+
+            User user = userRepository.findByEmail(loginRequest.getEmail())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            return ResponseEntity.ok(Map.of(
+                    "token", jwt,
+                    "role", user.getRole().name(),
+                    "name", user.getFullName(),
+                    "message", "Login successful"
+            ));
+
+        } catch (BadCredentialsException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Invalid email or password. Please try again."));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Authentication failed: " + e.getMessage()));
+        }
+    }
+
+    // Lets a logged-in user (Staff, Manager, or Admin) set their own memorable
+    // password, replacing a random temp password issued at creation or reset.
+    // Requires the current password, so a stolen or left-open session can't be
+    // used to lock the real account owner out.
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+                                            Authentication authentication) {
+        try {
+            String email = authentication.getName();
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Current password is incorrect."));
+            }
+
+            user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            user.setFirstLogin(false);
+            userRepository.save(user);
+
+            return ResponseEntity.ok(Map.of("message", "Password changed successfully."));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to change password: " + e.getMessage()));
+        }
+    }
+}
+===== src/main/java/com/rainbowwash/controller/CleaningBookingController.java =====
+package com.rainbowwash.controller;
+
+import com.rainbowwash.dto.CleaningBookingRequest;
+import com.rainbowwash.dto.CleaningBookingUpdateRequest;
+import com.rainbowwash.model.CleaningBooking;
+import com.rainbowwash.service.CleaningBookingService;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/bookings")
+public class CleaningBookingController {
+
+    private final CleaningBookingService bookingService;
+
+    public CleaningBookingController(CleaningBookingService bookingService) {
+        this.bookingService = bookingService;
+    }
+
+    @PostMapping
+    public ResponseEntity<CleaningBooking> createBooking(@Valid @RequestBody CleaningBookingRequest request) {
+        System.out.println("RECEIVED BOOKING REQUEST: " + request);
+        return ResponseEntity.ok(bookingService.createBooking(request));
+    }
+
+    @GetMapping
+    public ResponseEntity<List<CleaningBooking>> getAllBookings() {
+        return ResponseEntity.ok(bookingService.getAllBookings());
+    }
+
+    // Staff/Manager/Admin only (any authenticated dashboard user) — content edits
+    // are further restricted client-side once printed, per the PRD's locking rule.
+    @PatchMapping("/{id}")
+    public ResponseEntity<CleaningBooking> updateBooking(@PathVariable Long id, @RequestBody CleaningBookingUpdateRequest request) {
+        return ResponseEntity.ok(bookingService.updateBooking(id, request));
+    }
+}
+===== src/main/java/com/rainbowwash/controller/LaundryServiceController.java =====
+package com.rainbowwash.controller;
+
+import com.rainbowwash.dto.LaundryServiceRequest;
+import com.rainbowwash.dto.LaundryServiceResponse;
+import com.rainbowwash.service.LaundryServiceService;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/services")
+public class LaundryServiceController {
+
+    private final LaundryServiceService laundryService;
+
+    public LaundryServiceController(LaundryServiceService laundryService) {
+        this.laundryService = laundryService;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<LaundryServiceResponse>> getAllServices() {
+        return ResponseEntity.ok(laundryService.getAllServices());
+    }
+
+    @PostMapping
+    public ResponseEntity<LaundryServiceResponse> createService(@Valid @RequestBody LaundryServiceRequest request) {
+        return ResponseEntity.ok(laundryService.createService(request));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<LaundryServiceResponse> updateService(
+            @PathVariable Long id,
+            @Valid @RequestBody LaundryServiceRequest request) {
+        return ResponseEntity.ok(laundryService.updateService(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteService(@PathVariable Long id) {
+        laundryService.deleteService(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+===== src/main/java/com/rainbowwash/controller/OrderController.java =====
+package com.rainbowwash.controller;
+
+import com.rainbowwash.dto.OrderRequest;
+import com.rainbowwash.dto.OrderUpdateRequest;
+import com.rainbowwash.model.Order;
+import com.rainbowwash.service.OrderService;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/orders")
+public class OrderController {
+
+    private final OrderService orderService;
+
+    public OrderController(OrderService orderService) {
+        this.orderService = orderService;
+    }
+
+    // Public — customers place laundry orders without an account.
+    @PostMapping
+    public ResponseEntity<Order> createOrder(@Valid @RequestBody OrderRequest request) {
+        return ResponseEntity.ok(orderService.createOrder(request));
+    }
+
+    // Public — the Track Order page looks up a single order by its reference,
+    // with no login required. Deliberately narrower than the full GET / list
+    // below, which requires staff auth and would otherwise expose every
+    // customer's name, phone and total to anyone who asks.
+    @GetMapping("/track/{referenceId}")
+    public ResponseEntity<Order> trackOrder(@PathVariable String referenceId) {
+        Order order = orderService.findByReference(referenceId);
+        return order != null ? ResponseEntity.ok(order) : ResponseEntity.notFound().build();
+    }
+
+    // Authenticated (dashboard) — full list, Today/History filtering happens client-side.
+    @GetMapping
+    public ResponseEntity<List<Order>> getAllOrders() {
+        return ResponseEntity.ok(orderService.getAllOrders());
+    }
+
+    // Authenticated (dashboard) — status, total, payment status, archived, printed.
+    @PatchMapping("/{id}")
+    public ResponseEntity<Order> updateOrder(@PathVariable Long id, @RequestBody OrderUpdateRequest request) {
+        return ResponseEntity.ok(orderService.updateOrder(id, request));
+    }
+}
+
+===== src/main/java/com/rainbowwash/controller/ProductController.java =====
+package com.rainbowwash.controller;
+
+import com.rainbowwash.model.Product;
+import com.rainbowwash.service.ProductService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/products")
+public class ProductController {
+
+    private final ProductService productService;
+
+    public ProductController(ProductService productService) {
+        this.productService = productService;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Product>> getAllProducts() {
+        return ResponseEntity.ok(productService.getAllProducts());
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<Product> createProduct(@RequestBody Product product) {
+        return ResponseEntity.ok(productService.createProduct(product));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product product) {
+        return ResponseEntity.ok(productService.updateProduct(id, product));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
+        productService.deleteProduct(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+===== src/main/java/com/rainbowwash/controller/ShopOrderController.java =====
+package com.rainbowwash.controller;
+
+import com.rainbowwash.dto.ShopOrderRequest;
+import com.rainbowwash.dto.ShopOrderUpdateRequest;
+import com.rainbowwash.model.ShopOrder;
+import com.rainbowwash.service.ShopOrderService;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/shop-orders")
+public class ShopOrderController {
+
+    private final ShopOrderService shopOrderService;
+
+    public ShopOrderController(ShopOrderService shopOrderService) {
+        this.shopOrderService = shopOrderService;
+    }
+
+    // Public — customers check out from the shop without an account.
+    @PostMapping
+    public ResponseEntity<ShopOrder> createShopOrder(@Valid @RequestBody ShopOrderRequest request) {
+        return ResponseEntity.ok(shopOrderService.createShopOrder(request));
+    }
+
+    @GetMapping
+    public ResponseEntity<List<ShopOrder>> getAllShopOrders() {
+        return ResponseEntity.ok(shopOrderService.getAllShopOrders());
+    }
+
+    @PatchMapping("/{id}")
+    public ResponseEntity<ShopOrder> updateShopOrder(@PathVariable Long id, @RequestBody ShopOrderUpdateRequest request) {
+        return ResponseEntity.ok(shopOrderService.updateShopOrder(id, request));
+    }
+}
+
+===== src/main/java/com/rainbowwash/dto/ChangePasswordRequest.java =====
+package com.rainbowwash.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.Data;
+
+@Data
+public class ChangePasswordRequest {
+    @NotBlank(message = "Current password is required")
+    private String currentPassword;
+
+    @NotBlank(message = "New password is required")
+    @Size(min = 8, message = "New password must be at least 8 characters")
+    private String newPassword;
+}
+===== src/main/java/com/rainbowwash/dto/CleaningBookingRequest.java =====
+package com.rainbowwash.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+import java.math.BigDecimal;
+
+@Data
+public class CleaningBookingRequest {
+    @NotBlank(message = "Service is required")
+    private String service;
+
+    @NotBlank(message = "Size is required")
+    private String size;
+
+    private String date;
+    private String time;
+    private String address;
+    private String payType;
+
+    @NotNull(message = "Payable amount is required")
+    private BigDecimal payable;
+
+    private String transferNote;
+
+    @NotBlank(message = "Full name is required")
+    private String fullName;
+
+    @NotBlank(message = "Phone number is required")
+    private String phone;
+
+    private String email;
+}
+===== src/main/java/com/rainbowwash/dto/CleaningBookingUpdateRequest.java =====
+package com.rainbowwash.dto;
+
+import lombok.Data;
+import java.math.BigDecimal;
+
+@Data
+public class CleaningBookingUpdateRequest {
+    private String status;
+    private BigDecimal payable;
+    private String paymentStatus;
+    private Boolean archived;
+    private Boolean printed;
+    private String paymentMethod;
+}
+===== src/main/java/com/rainbowwash/dto/CreateEmployeeRequest.java =====
+package com.rainbowwash.dto;
+
+import com.rainbowwash.model.UserRole;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+
+@Data
+@Getter
+@Setter
+public class CreateEmployeeRequest {
+    @NotBlank(message = "Full name is required")
+    private String fullName;
+
+    @Email(message = "Invalid Email Format")
+    @NotBlank(message = "Email is required")
+    private String email;
+
+
+    @NotNull(message = "Role is required")
+    private UserRole role;
+}
+
+===== src/main/java/com/rainbowwash/dto/EmployeeSummary.java =====
+package com.rainbowwash.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+
+@Data
+@AllArgsConstructor
+public class EmployeeSummary {
+    private Long id;
+    private String fullName;
+    private String email;
+    private String role;
+}
+===== src/main/java/com/rainbowwash/dto/LaundryServiceRequest.java =====
+package com.rainbowwash.dto;
+
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+import java.math.BigDecimal;
+
+@Data
+public class LaundryServiceRequest {
+    @NotBlank(message = "Service name is required")
+    private String name;
+
+    private String description;
+
+    @NotNull(message = "Price is required")
+    @DecimalMin(value = "0.0", inclusive = false, message = "Price must be greater than zero")
+    private BigDecimal price;
+
+    @NotBlank(message = "Category is required")
+    private String category;
+
+    @Min(value = 5, message = "New stock always starts at 5 units or more")
+    private int stock = 5;
+
+    private boolean available = true;
+}
+===== src/main/java/com/rainbowwash/dto/LaundryServiceResponse.java =====
+package com.rainbowwash.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import java.math.BigDecimal;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class LaundryServiceResponse {
+    private Long id;
+    private String name;
+    private String description;
+    private BigDecimal price;
+    private String category;
+    private int stock;
+    private boolean available;
+}
+===== src/main/java/com/rainbowwash/dto/LoginRequest.java =====
+package com.rainbowwash.dto;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+
+@Data
+public class LoginRequest {
+    @Email(message = "Invalid email format")
+    @NotBlank(message = "Email is required")
+    private String email;
+
+    @NotBlank(message = "Password is required")
+    private String password;
+}
+===== src/main/java/com/rainbowwash/dto/OrderItemRequest.java =====
+package com.rainbowwash.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
+import java.math.BigDecimal;
+
+@Data
+public class OrderItemRequest {
+    @NotBlank(message = "Item name is required")
+    private String name;
+
+    @NotNull(message = "Quantity is required")
+    private BigDecimal qty;
+
+    private String unit;
+
+    @NotNull(message = "Price is required")
+    private BigDecimal price;
+}
+
+===== src/main/java/com/rainbowwash/dto/OrderRequest.java =====
+package com.rainbowwash.dto;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+@Data
+public class OrderRequest {
+    @NotEmpty(message = "Order must contain at least one item")
+    @Valid
+    private List<OrderItemRequest> items;
+
+    private String fulfilment;
+    private String address;
+    private String preferredDate;
+    private String preferredTime;
+    private String paymentMethod;
+    private String transferNote;
+
+    @NotNull(message = "Total is required")
+    private BigDecimal total;
+
+    @NotBlank(message = "Full name is required")
+    private String fullName;
+
+    @NotBlank(message = "Phone number is required")
+    private String phone;
+
+    private String email;
+
+    // Set by the dashboard when staff create a walk-in order; left null for
+    // orders customers place themselves on the public site.
+    private String createdBy;
+}
+
+===== src/main/java/com/rainbowwash/dto/OrderUpdateRequest.java =====
+package com.rainbowwash.dto;
+
+import lombok.Data;
+import java.math.BigDecimal;
+
+@Data
+public class OrderUpdateRequest {
+    private String status;
+    private BigDecimal total;
+    private String paymentStatus;
+    private Boolean archived;
+    private Boolean printed;
+    private String paymentMethod;
+}
+===== src/main/java/com/rainbowwash/dto/ShopOrderItemRequest.java =====
+package com.rainbowwash.dto;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
+import java.math.BigDecimal;
+
+@Data
+public class ShopOrderItemRequest {
+    @NotBlank(message = "Product name is required")
+    private String name;
+
+    @Min(value = 1, message = "Quantity must be at least 1")
+    private int qty;
+
+    @NotNull(message = "Price is required")
+    private BigDecimal price;
+}
+
+===== src/main/java/com/rainbowwash/dto/ShopOrderRequest.java =====
+package com.rainbowwash.dto;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+@Data
+public class ShopOrderRequest {
+    @NotEmpty(message = "Order must contain at least one item")
+    @Valid
+    private List<ShopOrderItemRequest> items;
+
+    @NotBlank(message = "Full name is required")
+    private String fullName;
+
+    @NotBlank(message = "Phone number is required")
+    private String phone;
+
+    private String mode;
+
+    @NotNull(message = "Total is required")
+    private BigDecimal total;
+
+    private String createdBy;
+}
+
+===== src/main/java/com/rainbowwash/dto/ShopOrderUpdateRequest.java =====
+package com.rainbowwash.dto;
+
+import lombok.Data;
+
+@Data
+public class ShopOrderUpdateRequest {
+    private String status;
+    private String paymentStatus;
+    private Boolean archived;
+    private Boolean printed;
+    private String paymentMethod;
+}
+===== src/main/java/com/rainbowwash/model/CleaningBooking.java =====
+package com.rainbowwash.model;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Data
+@Entity
+@Table(name = "cleaning_bookings")
+public class CleaningBooking {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String referenceId;
+    private String service;
+    private String size;
+    private String bookingDate;
+    private String bookingTime;
+    private String address;
+    private String payType;
+    private BigDecimal payable;
+    private String transferNote;
+    private String paymentStatus;
+    private String paymentMethod = "Transfer"; // "Transfer" | "Card"
+    private String status; // "Pending Quote", "Confirmed", etc.
+
+    private String fullName;
+    private String phone;
+    private String email;
+
+    private LocalDateTime placedAt;
+    private boolean archived;
+
+    // Locked the moment a booking is created (staff can't edit/delete it after
+    // submission, only Manager/Admin can) — printed becomes true only once a
+    // real print button is clicked, after which nobody can delete it.
+    private boolean locked = true;
+    private boolean printed = false;
+}
+===== src/main/java/com/rainbowwash/model/LaundryService.java =====
+package com.rainbowwash.model;
+
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import java.math.BigDecimal;
+
+@Entity
+@Table(name = "laundry_services")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class LaundryService {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String name;
+
+    private String description;
+
+    @Column(nullable = false)
+    private BigDecimal price;
+
+    @Column(nullable = false)
+    private String category;
+
+    @Column(nullable = false)
+    private int stock = 5; // Matches your frontend rule: "New stock always starts at 5 units or more"
+
+    @Column(nullable = false)
+    private boolean available = true;
+}
+===== src/main/java/com/rainbowwash/model/OrderItem.java =====
+package com.rainbowwash.model;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+
+@Data
+@NoArgsConstructor
+@Entity
+@Table(name = "order_items")
+public class OrderItem {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "order_id", nullable = false)
+    private Order order;
+
+    @Column(nullable = false)
+    private String name;
+
+    // BigDecimal, not int — self/staff wash lines are priced by kg and can be
+    // fractional (e.g. 3.5kg).
+    @Column(nullable = false)
+    private BigDecimal qty;
+
+    private String unit; // "kg" or blank for piece-based items
+
+    @Column(nullable = false)
+    private BigDecimal price;
+}
+
+===== src/main/java/com/rainbowwash/model/Order.java =====
+package com.rainbowwash.model;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+@Data
+@NoArgsConstructor
+@Entity
+@Table(name = "orders")
+public class Order {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String referenceId;
+
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrderItem> items = new ArrayList<>();
+
+    private String fulfilment; // "pickup" | "dropoff"
+    private String address;
+    private String preferredDate;
+    private String preferredTime;
+    private String paymentMethod; // "paystack" | "flutterwave" | "bank" | "walk-in"
+    private String transferNote;
+    private String paymentStatus; // "Pending" | "Sent" | "Confirmed"
+
+    @Column(nullable = false)
+    private BigDecimal total;
+
+    private String status; // "Received" | "Washing" | "Completed" | "Delivered"
+
+    private String fullName;
+    private String phone;
+    private String email;
+
+    // Name of the staff member who created this as a walk-in order, null for
+    // orders customers placed themselves on the public site.
+    private String createdBy;
+
+    private LocalDateTime placedAt;
+    private boolean archived;
+    private boolean locked = true;
+    private boolean printed = false;
+}
+
+===== src/main/java/com/rainbowwash/model/OrderStatus.java =====
+package com.rainbowwash.model;
+
+public enum OrderStatus {
+    PENDING,
+    PICKED_UP,
+    PROCESSING,
+    READY_FOR_DELIVERY,
+    COMPLETED,
+    CANCELLED
+}
+===== src/main/java/com/rainbowwash/model/Product.java =====
+package com.rainbowwash.model;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import java.math.BigDecimal;
+
+@Data
+@Entity
+@Table(name = "products")
+public class Product {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+    private String category;
+    private String description;
+    private BigDecimal price;
+    private int stock;
+    private String status; // "Active" or "Inactive"
+}
+===== src/main/java/com/rainbowwash/model/ShopOrderItem.java =====
+package com.rainbowwash.model;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+
+@Data
+@NoArgsConstructor
+@Entity
+@Table(name = "shop_order_items")
+public class ShopOrderItem {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shop_order_id", nullable = false)
+    private ShopOrder shopOrder;
+
+    @Column(nullable = false)
+    private String name;
+
+    @Column(nullable = false)
+    private int qty;
+
+    @Column(nullable = false)
+    private BigDecimal price;
+}
+
+===== src/main/java/com/rainbowwash/model/ShopOrder.java =====
+package com.rainbowwash.model;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+@Data
+@NoArgsConstructor
+@Entity
+@Table(name = "shop_orders")
+public class ShopOrder {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String referenceId;
+
+    @OneToMany(mappedBy = "shopOrder", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ShopOrderItem> items = new ArrayList<>();
+
+    private String fullName;
+    private String phone;
+    private String mode; // "pickup" | "delivery"
+
+    @Column(nullable = false)
+    private BigDecimal total;
+
+    private String status; // "Received" | "Packed" | "Out for Delivery" | "Completed"
+    private String paymentStatus; // "Pending" | "Received" | "Confirmed"
+    private String paymentMethod = "Transfer"; // "Transfer" | "Card"
+
+    private String createdBy; // staff name for walk-in sales, null for customer web orders
+
+    private LocalDateTime placedAt;
+    private boolean archived;
+    private boolean locked = true;
+    private boolean printed = false;
+}
+===== src/main/java/com/rainbowwash/model/User.java =====
+package com.rainbowwash.model;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "users")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class User {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private String fullName;
+
+    @Column(nullable = false, unique = true)
+    private String email;
+
+    @Column(nullable = false)
+    private String password;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private UserRole role;
+
+    @Column(nullable = false)
+    private boolean firstLogin = true;
+
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate(){
+        this.createdAt = LocalDateTime.now();
+    }
+
+
+
+
+}
+
+===== src/main/java/com/rainbowwash/model/UserRole.java =====
+package com.rainbowwash.model;
+
+public enum UserRole {
+    STAFF,
+    MANAGER,
+    ADMIN
+}
+
+===== src/main/java/com/rainbowwash/RainbowWashApplication.java =====
+package com.rainbowwash;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class RainbowWashApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(RainbowWashApplication.class, args);
+    }
+}
+
+===== src/main/java/com/rainbowwash/repository/CleaningBookingRepository.java =====
+package com.rainbowwash.repository;
+
+import com.rainbowwash.model.CleaningBooking;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface CleaningBookingRepository extends JpaRepository<CleaningBooking, Long> {
+}
+===== src/main/java/com/rainbowwash/repository/LaundryServiceRepository.java =====
+package com.rainbowwash.repository;
+
+import com.rainbowwash.model.LaundryService;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface LaundryServiceRepository extends JpaRepository<LaundryService, Long> {
+    boolean existsByName(String name);
+    List<LaundryService> findByAvailableTrue();
+}
+===== src/main/java/com/rainbowwash/repository/OrderRepository.java =====
+package com.rainbowwash.repository;
+
+import com.rainbowwash.model.Order;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Optional;
+
+public interface OrderRepository extends JpaRepository<Order, Long> {
+    Optional<Order> findByReferenceId(String referenceId);
+}
+
+===== src/main/java/com/rainbowwash/repository/ProductRepository.java =====
+package com.rainbowwash.repository;
+
+import com.rainbowwash.model.Product;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.List;
+
+public interface ProductRepository extends JpaRepository<Product, Long> {
+    List<Product> findByStatus(String status);
+}
+===== src/main/java/com/rainbowwash/repository/ShopOrderRepository.java =====
+package com.rainbowwash.repository;
+
+import com.rainbowwash.model.ShopOrder;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface ShopOrderRepository extends JpaRepository<ShopOrder, Long> {
+}
+
+===== src/main/java/com/rainbowwash/repository/UserRepository.java =====
+package com.rainbowwash.repository;
+
+import com.rainbowwash.model.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.Optional;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+    boolean existsByEmail(String email);
+    Optional<User> findByEmail(String email); // Add this line
+}
+===== src/main/java/com/rainbowwash/security/JwtAuthenticationFilter.java =====
+package com.rainbowwash.security;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.util.StringUtils;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private final JwtTokenProvider tokenProvider;
+    private final UserDetailsService userDetailsService;
+
+    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider, UserDetailsService userDetailsService) {
+        this.tokenProvider = tokenProvider;
+        this.userDetailsService = userDetailsService;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+        String token = getJwtFromRequest(request);
+
+        if (StringUtils.hasText(token) && tokenProvider.validateToken(token)) {
+            String username = tokenProvider.getUsernameFromJWT(token);
+            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
+            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                    userDetails, null, userDetails.getAuthorities());
+            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+        }
+
+        filterChain.doFilter(request, response);
+    }
+
+    private String getJwtFromRequest(HttpServletRequest request) {
+        String bearerToken = request.getHeader("Authorization");
+        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
+            return bearerToken.substring(7);
+        }
+        return null;
+    }
+}
+===== src/main/java/com/rainbowwash/security/JwtTokenProvider.java =====
+package com.rainbowwash.security;
+
+import io.jsonwebtoken.*;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
+
+@Component
+public class JwtTokenProvider {
+
+    @Value("${jwt.secret}")
+    private String jwtSecret;
+
+    @Value("${jwt.expiration}")
+    private long jwtExpiration;
+
+    private SecretKey getSigningKey() {
+        return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public String generateToken(Authentication authentication) {
+        String username = authentication.getName();
+        Date currentDate = new Date();
+        Date expireDate = new Date(currentDate.getTime() + jwtExpiration);
+
+        return Jwts.builder()
+                .subject(username)
+                .issuedAt(new Date())
+                .expiration(expireDate)
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public String getUsernameFromJWT(String token) {
+        Claims claims = Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        return claims.getSubject();
+    }
+
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parser().verifyWith(getSigningKey()).build().parseSignedClaims(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+}
+===== src/main/java/com/rainbowwash/security/SecurityConfig.java =====
+package com.rainbowwash.security;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    private final JwtTokenProvider tokenProvider;
+    private final UserDetailsService userDetailsService;
+    private final CorsConfigurationSource corsConfigurationSource;
+
+    public SecurityConfig(JwtTokenProvider tokenProvider, UserDetailsService userDetailsService,
+                          CorsConfigurationSource corsConfigurationSource) {
+        this.tokenProvider = tokenProvider;
+        this.userDetailsService = userDetailsService;
+        this.corsConfigurationSource = corsConfigurationSource;
+    }
+
+    @Bean
+    public JwtAuthenticationFilter jwtAuthenticationFilter() {
+        return new JwtAuthenticationFilter(tokenProvider, userDetailsService);
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
+        return authConfig.getAuthenticationManager();
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+                .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/services", "/api/services/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/bookings").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/orders").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/orders/track/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/shop-orders").permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .anyRequest().authenticated()
+                );
+
+        http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
+    }
+}
+===== src/main/java/com/rainbowwash/service/CleaningBookingService.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.dto.CleaningBookingRequest;
+import com.rainbowwash.dto.CleaningBookingUpdateRequest;
+import com.rainbowwash.model.CleaningBooking;
+import com.rainbowwash.repository.CleaningBookingRepository;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class CleaningBookingService {
+
+    private final CleaningBookingRepository bookingRepository;
+
+    public CleaningBookingService(CleaningBookingRepository bookingRepository) {
+        this.bookingRepository = bookingRepository;
+    }
+
+    public CleaningBooking createBooking(CleaningBookingRequest request) {
+        CleaningBooking booking = new CleaningBooking();
+        booking.setReferenceId("CLN-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase());
+        booking.setService(request.getService());
+        booking.setSize(request.getSize());
+        booking.setBookingDate(request.getDate());
+        booking.setBookingTime(request.getTime());
+        booking.setAddress(request.getAddress());
+        booking.setPayType(request.getPayType());
+        booking.setPayable(request.getPayable());
+        booking.setTransferNote(request.getTransferNote());
+        booking.setFullName(request.getFullName());
+        booking.setPhone(request.getPhone());
+        booking.setEmail(request.getEmail());
+        booking.setPaymentStatus("Pending");
+        booking.setStatus("Pending Quote");
+        booking.setPlacedAt(LocalDateTime.now());
+        booking.setArchived(false);
+        booking.setLocked(true);
+        booking.setPrinted(false);
+
+        return bookingRepository.save(booking);
+    }
+
+    public List<CleaningBooking> getAllBookings() {
+        return bookingRepository.findAll();
+    }
+
+    // Partial update — only the fields staff actually change from the dashboard
+    // (status, confirmed price, payment status, archived, printed). Never touches
+    // customer-entered fields like name/phone/service, matching the "content is
+    // locked after submission" rule from the PRD.
+    public CleaningBooking updateBooking(Long id, CleaningBookingUpdateRequest request) {
+        CleaningBooking booking = bookingRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Booking not found"));
+
+        if (request.getStatus() != null) booking.setStatus(request.getStatus());
+        if (request.getPayable() != null) booking.setPayable(request.getPayable());
+        if (request.getPaymentStatus() != null) booking.setPaymentStatus(request.getPaymentStatus());
+        if (request.getArchived() != null) booking.setArchived(request.getArchived());
+        if (request.getPrinted() != null) booking.setPrinted(request.getPrinted());
+        if (request.getPaymentMethod() != null) booking.setPaymentMethod(request.getPaymentMethod());
+
+        return bookingRepository.save(booking);
+    }
+}
+===== src/main/java/com/rainbowwash/service/EmployeeService.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.dto.CreateEmployeeRequest;
+import com.rainbowwash.dto.EmployeeSummary;
+import com.rainbowwash.model.User;
+import com.rainbowwash.model.UserRole;
+import com.rainbowwash.repository.UserRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+import java.security.SecureRandom;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+public class EmployeeService {
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final SecureRandom random = new SecureRandom();
+
+    // Word lists kept short, common, and easy to say/spell over the phone or WhatsApp.
+    // Combined with a 4-digit number the space is still large enough (60*60*10000 =
+    // 36,000,000 combinations) to be a safe one-time temp password, while being far
+    // easier for a Staff/Manager to read and retype correctly than a random string
+    // like "K1JIzhI0" (which mixes visually similar characters: I/l/1, 0/O).
+    private static final String[] WORDS = {
+            "Coral", "Otter", "Maple", "Amber", "Pixel", "Comet", "Delta", "Ember",
+            "Falcon", "Garnet", "Harbor", "Indigo", "Jasper", "Kettle", "Lagoon",
+            "Meadow", "Nectar", "Orchid", "Petal", "Quartz", "River", "Summit",
+            "Tundra", "Umbra", "Violet", "Willow", "Zephyr", "Cocoa", "Denim",
+            "Ember", "Frost", "Grove", "Haven", "Ivory", "Juniper", "Koala",
+            "Lantern", "Marble", "Nomad", "Onyx", "Prairie", "Quill", "Ripple",
+            "Sable", "Thistle", "Umber", "Vapor", "Walnut", "Yonder", "Zenith",
+            "Breeze", "Canyon", "Dune", "Ebony", "Fern", "Glacier", "Hazel",
+            "Iris", "Juniper", "Kite", "Lotus"
+    };
+
+    public EmployeeService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    // Returns the plaintext temporary password so the caller (AdminController) can
+    // hand it back to the Admin who provisioned the account, once, at creation time.
+    // It is never stored or logged in plaintext anywhere after this call returns.
+    public String provisionEmployee(CreateEmployeeRequest createEmployeeRequest) {
+        if (userRepository.existsByEmail(createEmployeeRequest.getEmail())) {
+            throw new RuntimeException("An account with this email already exist.");
+        }
+
+        String tempPassword = generateTemporaryPassword();
+
+        User newUser = new User();
+        newUser.setFullName(createEmployeeRequest.getFullName());
+        newUser.setEmail(createEmployeeRequest.getEmail());
+        newUser.setPassword(passwordEncoder.encode(tempPassword));
+        newUser.setRole(createEmployeeRequest.getRole());
+        newUser.setFirstLogin(true);
+
+        userRepository.save(newUser);
+
+        return tempPassword;
+    }
+
+    // Lists Staff and Manager accounts for the Admin dashboard. Admin accounts are
+    // excluded here deliberately — this list is for managing employees, not for
+    // browsing other admins. Never includes password/hash data.
+    public List<EmployeeSummary> listEmployees() {
+        return userRepository.findAll().stream()
+                .filter(u -> u.getRole() != UserRole.ADMIN)
+                .map(u -> new EmployeeSummary(u.getId(), u.getFullName(), u.getEmail(), u.getRole().name()))
+                .collect(Collectors.toList());
+    }
+
+    // Generates a brand new temporary password for an existing user and overwrites
+    // their stored hash. This is the safe substitute for "showing" a forgotten
+    // password: the old one is never recoverable, but the Admin can always issue a
+    // fresh one and relay it to the staff member.
+    public String resetPassword(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        String tempPassword = generateTemporaryPassword();
+        user.setPassword(passwordEncoder.encode(tempPassword));
+        user.setFirstLogin(true);
+        userRepository.save(user);
+
+        return tempPassword;
+    }
+
+    // Permanently removes a Staff or Manager account (e.g. someone who has left the
+    // company). Deliberately refuses to delete Admin accounts through this path —
+    // that would let one Admin lock everyone else out, including other Admins.
+    // If you genuinely need to remove an Admin account, that has to be done directly
+    // against the database, not through this employee-management endpoint.
+    public void deleteEmployee(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (user.getRole() == UserRole.ADMIN) {
+            throw new RuntimeException("Admin accounts cannot be deleted from this screen.");
+        }
+
+        userRepository.delete(user);
+    }
+
+    // Produces something like "Coral-Otter-4821": two random dictionary words plus
+    // a 4-digit number. Memorable and easy to retype correctly, while still random
+    // enough to be safe as a one-time temp password (the user is always forced to
+    // change it on first login via firstLogin=true).
+    private String generateTemporaryPassword() {
+        String word1 = WORDS[random.nextInt(WORDS.length)];
+        String word2 = WORDS[random.nextInt(WORDS.length)];
+        int number = 1000 + random.nextInt(9000); // 4-digit, 1000-9999
+
+        return word1 + "-" + word2 + "-" + number;
+    }
+}
+===== src/main/java/com/rainbowwash/service/LaundryServiceService.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.dto.LaundryServiceRequest;
+import com.rainbowwash.dto.LaundryServiceResponse;
+import com.rainbowwash.model.LaundryService;
+import com.rainbowwash.repository.LaundryServiceRepository;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+public class LaundryServiceService {
+
+    private final LaundryServiceRepository serviceRepository;
+
+    public LaundryServiceService(LaundryServiceRepository serviceRepository) {
+        this.serviceRepository = serviceRepository;
+    }
+
+    public LaundryServiceResponse createService(LaundryServiceRequest request) {
+        if (serviceRepository.existsByName(request.getName())) {
+            throw new RuntimeException("Service with this name already exists");
+        }
+        LaundryService service = new LaundryService();
+        service.setName(request.getName());
+        service.setDescription(request.getDescription());
+        service.setPrice(request.getPrice());
+        service.setCategory(request.getCategory());
+        service.setStock(request.getStock());
+        service.setAvailable(request.isAvailable());
+
+        LaundryService saved = serviceRepository.save(service);
+        return mapToResponse(saved);
+    }
+
+    public List<LaundryServiceResponse> getAllServices() {
+        return serviceRepository.findAll().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    public LaundryServiceResponse updateService(Long id, LaundryServiceRequest request) {
+        LaundryService service = serviceRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Service not found with id: " + id));
+
+        service.setName(request.getName());
+        service.setDescription(request.getDescription());
+        service.setPrice(request.getPrice());
+        service.setCategory(request.getCategory());
+        service.setStock(request.getStock());
+        service.setAvailable(request.isAvailable());
+
+        LaundryService updated = serviceRepository.save(service);
+        return mapToResponse(updated);
+    }
+
+    public void deleteService(Long id) {
+        serviceRepository.deleteById(id);
+    }
+
+    private LaundryServiceResponse mapToResponse(LaundryService service) {
+        return new LaundryServiceResponse(
+                service.getId(),
+                service.getName(),
+                service.getDescription(),
+                service.getPrice(),
+                service.getCategory(),
+                service.getStock(),
+                service.isAvailable()
+        );
+    }
+}
+===== src/main/java/com/rainbowwash/service/OrderService.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.dto.OrderItemRequest;
+import com.rainbowwash.dto.OrderRequest;
+import com.rainbowwash.dto.OrderUpdateRequest;
+import com.rainbowwash.model.Order;
+import com.rainbowwash.model.OrderItem;
+import com.rainbowwash.repository.OrderRepository;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+public class OrderService {
+
+    private final OrderRepository orderRepository;
+
+    public OrderService(OrderRepository orderRepository) {
+        this.orderRepository = orderRepository;
+    }
+
+    public Order createOrder(OrderRequest request) {
+        Order order = new Order();
+        order.setReferenceId("LND-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase());
+        order.setFulfilment(request.getFulfilment());
+        order.setAddress(request.getAddress());
+        order.setPreferredDate(request.getPreferredDate());
+        order.setPreferredTime(request.getPreferredTime());
+        order.setPaymentMethod(request.getPaymentMethod());
+        order.setTransferNote(request.getTransferNote());
+        order.setPaymentStatus("Pending");
+        order.setTotal(request.getTotal());
+        order.setStatus("Received");
+        order.setFullName(request.getFullName());
+        order.setPhone(request.getPhone());
+        order.setEmail(request.getEmail());
+        order.setCreatedBy(request.getCreatedBy());
+        order.setPlacedAt(LocalDateTime.now());
+        order.setArchived(false);
+        order.setLocked(true);
+        order.setPrinted(false);
+
+        List<OrderItem> items = request.getItems().stream().map(itemReq -> {
+            OrderItem item = new OrderItem();
+            item.setOrder(order);
+            item.setName(itemReq.getName());
+            item.setQty(itemReq.getQty());
+            item.setUnit(itemReq.getUnit());
+            item.setPrice(itemReq.getPrice());
+            return item;
+        }).collect(Collectors.toList());
+        order.setItems(items);
+
+        return orderRepository.save(order);
+    }
+
+    public List<Order> getAllOrders() {
+        return orderRepository.findAll();
+    }
+
+    // Public lookup for the Track Order page — returns null (controller maps to
+    // 404) rather than throwing, since "not found" is an expected, routine result
+    // here, not an error condition.
+    public Order findByReference(String referenceId) {
+        return orderRepository.findByReferenceId(referenceId).orElse(null);
+    }
+
+    public Order updateOrder(Long id, OrderUpdateRequest request) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+
+        if (request.getStatus() != null) order.setStatus(request.getStatus());
+        if (request.getTotal() != null) order.setTotal(request.getTotal());
+        if (request.getPaymentStatus() != null) order.setPaymentStatus(request.getPaymentStatus());
+        if (request.getArchived() != null) order.setArchived(request.getArchived());
+        if (request.getPrinted() != null) order.setPrinted(request.getPrinted());
+        if (request.getPaymentMethod() != null) order.setPaymentMethod(request.getPaymentMethod());
+
+        return orderRepository.save(order);
+    }
+}
+===== src/main/java/com/rainbowwash/service/ProductService.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.model.Product;
+import com.rainbowwash.repository.ProductRepository;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class ProductService {
+
+    private final ProductRepository productRepository;
+
+    public ProductService(ProductRepository productRepository) {
+        this.productRepository = productRepository;
+    }
+
+    public List<Product> getAllProducts() {
+        return productRepository.findAll();
+    }
+
+    public Product createProduct(Product product) {
+        return productRepository.save(product);
+    }
+
+    public Product updateProduct(Long id, Product updated) {
+        Product existing = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+
+        existing.setName(updated.getName());
+        existing.setCategory(updated.getCategory());
+        existing.setDescription(updated.getDescription());
+        existing.setPrice(updated.getPrice());
+        existing.setStock(updated.getStock());
+        existing.setStatus(updated.getStatus());
+
+        return productRepository.save(existing);
+    }
+
+    public void deleteProduct(Long id) {
+        productRepository.deleteById(id);
+    }
+}
+===== src/main/java/com/rainbowwash/service/ShopOrderService.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.dto.ShopOrderRequest;
+import com.rainbowwash.dto.ShopOrderUpdateRequest;
+import com.rainbowwash.model.ShopOrder;
+import com.rainbowwash.model.ShopOrderItem;
+import com.rainbowwash.repository.ShopOrderRepository;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+public class ShopOrderService {
+
+    private final ShopOrderRepository shopOrderRepository;
+
+    public ShopOrderService(ShopOrderRepository shopOrderRepository) {
+        this.shopOrderRepository = shopOrderRepository;
+    }
+
+    public ShopOrder createShopOrder(ShopOrderRequest request) {
+        ShopOrder order = new ShopOrder();
+        order.setReferenceId("SHOP-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase());
+        order.setFullName(request.getFullName());
+        order.setPhone(request.getPhone());
+        order.setMode(request.getMode());
+        order.setTotal(request.getTotal());
+        order.setStatus("Received");
+        order.setPaymentStatus("Pending");
+        order.setCreatedBy(request.getCreatedBy());
+        order.setPlacedAt(LocalDateTime.now());
+        order.setArchived(false);
+        order.setLocked(true);
+        order.setPrinted(false);
+
+        List<ShopOrderItem> items = request.getItems().stream().map(itemReq -> {
+            ShopOrderItem item = new ShopOrderItem();
+            item.setShopOrder(order);
+            item.setName(itemReq.getName());
+            item.setQty(itemReq.getQty());
+            item.setPrice(itemReq.getPrice());
+            return item;
+        }).collect(Collectors.toList());
+        order.setItems(items);
+
+        return shopOrderRepository.save(order);
+    }
+
+    public List<ShopOrder> getAllShopOrders() {
+        return shopOrderRepository.findAll();
+    }
+
+    public ShopOrder updateShopOrder(Long id, ShopOrderUpdateRequest request) {
+        ShopOrder order = shopOrderRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Shop order not found"));
+
+        if (request.getStatus() != null) order.setStatus(request.getStatus());
+        if (request.getPaymentStatus() != null) order.setPaymentStatus(request.getPaymentStatus());
+        if (request.getArchived() != null) order.setArchived(request.getArchived());
+        if (request.getPrinted() != null) order.setPrinted(request.getPrinted());
+        if (request.getPaymentMethod() != null) order.setPaymentMethod(request.getPaymentMethod());
+
+        return shopOrderRepository.save(order);
+    }
+}
+===== src/main/java/com/rainbowwash/service/UserDetailsServiceImpl.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.model.User;
+import com.rainbowwash.repository.UserRepository;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
+import java.util.Optional;
+
+@Service
+public class UserDetailsServiceImpl implements UserDetailsService {
+
+    private final UserRepository userRepository;
+
+    public UserDetailsServiceImpl(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
+    @Override
+    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+        // Since your User model uses email as the unique identifier
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
+
+        return org.springframework.security.core.userdetails.User.builder()
+                .username(user.getEmail())
+                .password(user.getPassword())
+                .roles(user.getRole().name()) // Converts your UserRole enum to a String (e.g., ADMIN, STAFF)
+                .build();
+    }
+}
+===== src/test/java/com/rainbowwash/BcryptHashGenerator.java =====
+package com.rainbowwash;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+
+public class BcryptHashGenerator {
+    @Test
+    void printHash() {
+        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+        String plainPassword = "12345678";
+        String hash = encoder.encode(plainPassword);
+        System.out.println("BCRYPT_HASH_START");
+        System.out.println(hash);
+        System.out.println("BCRYPT_HASH_END");
+    }
+}
+
+===== src/test/java/com/rainbowwash/controller/AdminControllerIntegrationTest.java =====
+package com.rainbowwash.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rainbowwash.dto.CreateEmployeeRequest;
+import com.rainbowwash.model.UserRole;
+import com.rainbowwash.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+class AdminControllerIntegrationTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @BeforeEach
+    void setUp() {
+        userRepository.deleteAll();
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void testCreateEmployeeEndpointSuccess() throws Exception {
+        CreateEmployeeRequest request = new CreateEmployeeRequest();
+        request.setFullName("Jane Smith");
+        request.setEmail("jane@rainbowwash.com");
+        request.setRole(UserRole.MANAGER); // Pass UserRole enum
+
+        mockMvc.perform(post("/api/admin/create-employee") // Updated endpoint URL to match controller
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk()) // Controller returns 200 OK with a string message
+                .andExpect(content().string("Employee account created successfully. Temporary credentials sent."));
+    }
+
+    @Test
+    void testCreateEmployeeUnauthorizedWithoutRole() throws Exception {
+        CreateEmployeeRequest request = new CreateEmployeeRequest();
+        request.setFullName("Jane Smith");
+        request.setEmail("jane@rainbowwash.com");
+        request.setRole(UserRole.MANAGER);
+
+        mockMvc.perform(post("/api/admin/create-employee") // Updated endpoint URL
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
+    }
+}
+===== src/test/java/com/rainbowwash/controller/AuthControllerTest.java =====
+package com.rainbowwash.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rainbowwash.dto.LoginRequest;
+import com.rainbowwash.model.UserRole;
+import com.rainbowwash.security.JwtTokenProvider;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@WebMvcTest(AuthController.class)
+class AuthControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @MockBean
+    private AuthenticationManager authenticationManager;
+
+    @MockBean
+    private JwtTokenProvider tokenProvider;
+
+    @Test
+    @DisplayName("Successfully authenticate user and return JWT token")
+    void testAuthenticateUser_Success() throws Exception {
+        LoginRequest request = new LoginRequest();
+        request.setEmail("AdminUser");
+//        request.setRole(UserRole.ADMIN);
+        request.setPassword("Password123!");
+
+        Authentication authentication = org.mockito.Mockito.mock(Authentication.class);
+        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                .thenReturn(authentication);
+        when(tokenProvider.generateToken(authentication)).thenReturn("mock-jwt-token-12345");
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("mock-jwt-token-12345"))
+                .andExpect(jsonPath("$.message").value("Login successful"));
+    }
+
+    @Test
+    @DisplayName("Fail authentication on invalid credentials (BadCredentialsException)")
+    void testAuthenticateUser_InvalidCredentials() throws Exception {
+        LoginRequest request = new LoginRequest();
+        request.setEmail("AdminUser");
+//        request.setRole(UserRole.ADMIN);
+        request.setPassword("WrongPassword");
+
+        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                .thenThrow(new BadCredentialsException("Bad credentials"));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("Invalid name or password. Please try again."));
+    }
+
+    @Test
+    @DisplayName("Fail validation when name or password is blank")
+    void testAuthenticateUser_ValidationFailure() throws Exception {
+        LoginRequest request = new LoginRequest();
+        request.setEmail(""); // Blank name
+        request.setPassword(null); // Missing role
+        request.setPassword(""); // Blank password
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+}
+===== src/test/java/com/rainbowwash/service/CleaningBookingServiceTest.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.dto.CleaningBookingRequest;
+import com.rainbowwash.model.CleaningBooking;
+import com.rainbowwash.repository.CleaningBookingRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class CleaningBookingServiceTest {
+
+    @Mock
+    private CleaningBookingRepository cleaningBookingRepository;
+
+    @InjectMocks
+    private CleaningBookingService cleaningBookingService;
+
+    private CleaningBookingRequest request;
+
+    @BeforeEach
+    void setUp() {
+        request = new CleaningBookingRequest();
+        request.setService("Deep Cleaning");
+        request.setSize("2 Bedroom");
+        request.setDate("2026-08-25");
+        request.setTime("10:00 AM");
+        request.setAddress("10 Tech Street, Lagos");
+        request.setPayType("Card");
+        request.setPayable(BigDecimal.valueOf(20000.00));
+        request.setFullName("Faith Dike");
+        request.setPhone("08011112222");
+        request.setEmail("faith@rainbowwash.com");
+    }
+
+    @Test
+    void createBooking_ShouldSaveSuccessfullyAndGenerateReferenceId() {
+        // Arrange
+        when(cleaningBookingRepository.save(any(CleaningBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        CleaningBooking savedBooking = cleaningBookingService.createBooking(request);
+
+        // Assert
+        assertNotNull(savedBooking);
+        assertNotNull(savedBooking.getReferenceId());
+        assertTrue(savedBooking.getReferenceId().startsWith("CLN-"));
+        assertEquals("Deep Cleaning", savedBooking.getService());
+        assertEquals("Faith Dike", savedBooking.getFullName());
+        assertEquals("Pending", savedBooking.getPaymentStatus());
+        assertEquals("Pending Quote", savedBooking.getStatus());
+        assertFalse(savedBooking.isArchived());
+
+        // Verify repository interaction
+        verify(cleaningBookingRepository, times(1)).save(any(CleaningBooking.class));
+    }
+
+    @Test
+    void getAllBookings_ShouldReturnAllBookings() {
+        // Arrange — includes both archived and non-archived, since History needs
+        // to see everything; Today/History filtering now happens client-side.
+        CleaningBooking booking = new CleaningBooking();
+        booking.setId(1L);
+        booking.setService("Standard Cleaning");
+        booking.setArchived(false);
+
+        when(cleaningBookingRepository.findAll()).thenReturn(List.of(booking));
+
+        // Act
+        List<CleaningBooking> bookings = cleaningBookingService.getAllBookings();
+
+        // Assert
+        assertNotNull(bookings);
+        assertEquals(1, bookings.size());
+        assertEquals("Standard Cleaning", bookings.get(0).getService());
+
+        verify(cleaningBookingRepository, times(1)).findAll();
+    }
+}
+===== src/test/java/com/rainbowwash/service/EmployeeServiceTest.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.dto.CreateEmployeeRequest;
+import com.rainbowwash.model.User;
+import com.rainbowwash.model.UserRole;
+import com.rainbowwash.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class EmployeeServiceTest {
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @InjectMocks
+    private EmployeeService employeeService;
+
+    private CreateEmployeeRequest request;
+
+    @BeforeEach
+    void setUp() {
+        request = new CreateEmployeeRequest();
+        request.setFullName("John Doe");
+        request.setEmail("john@rainbowwash.com");
+        request.setRole(UserRole.STAFF);
+    }
+
+    @Test
+    void testProvisionEmployeeSuccess() {
+        when(userRepository.existsByEmail(request.getEmail())).thenReturn(false);
+        when(passwordEncoder.encode(any())).thenReturn("encodedPassword");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        employeeService.provisionEmployee(request);
+
+        verify(userRepository, times(1)).existsByEmail(request.getEmail());
+        verify(userRepository, times(1)).save(any(User.class));
+    }
+
+    @Test
+    void testProvisionEmployeeEmailExistsThrowsException() {
+        when(userRepository.existsByEmail(request.getEmail())).thenReturn(true);
+
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            employeeService.provisionEmployee(request);
+        });
+
+        assertEquals("An account with this email already exist.", exception.getMessage());
+        verify(userRepository, never()).save(any(User.class));
+    }
+}
+===== src/test/java/com/rainbowwash/service/OrderServiceTest.java =====
+package com.rainbowwash.service;
+
+import com.rainbowwash.dto.OrderItemRequest;
+import com.rainbowwash.dto.OrderRequest;
+import com.rainbowwash.dto.OrderUpdateRequest;
+import com.rainbowwash.model.Order;
+import com.rainbowwash.repository.OrderRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class OrderServiceTest {
+
+    @Mock
+    private OrderRepository orderRepository;
+
+    @InjectMocks
+    private OrderService orderService;
+
+    private OrderRequest orderRequest;
+
+    @BeforeEach
+    void setUp() {
+        OrderItemRequest item1 = new OrderItemRequest();
+        item1.setName("Self Wash, Wash & Dry");
+        item1.setQty(new BigDecimal("3"));
+        item1.setUnit("kg");
+        item1.setPrice(new BigDecimal("1500"));
+
+        OrderItemRequest item2 = new OrderItemRequest();
+        item2.setName("Suit (2-piece) (Regular)");
+        item2.setQty(new BigDecimal("1"));
+        item2.setUnit("");
+        item2.setPrice(new BigDecimal("5000"));
+
+        orderRequest = new OrderRequest();
+        orderRequest.setItems(List.of(item1, item2));
+        orderRequest.setFulfilment("dropoff");
+        orderRequest.setPaymentMethod("bank");
+        orderRequest.setTotal(new BigDecimal("9500")); // (3 * 1500) + 5000
+        orderRequest.setFullName("Faith Dike");
+        orderRequest.setPhone("0803 000 1122");
+    }
+
+    @Test
+    void createOrder_savesOrderWithGeneratedReferenceAndItems() {
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order saved = invocation.getArgument(0);
+            saved.setId(100L);
+            return saved;
+        });
+
+        Order result = orderService.createOrder(orderRequest);
+
+        assertNotNull(result);
+        assertEquals(100L, result.getId());
+        assertTrue(result.getReferenceId().startsWith("LND-"));
+        assertEquals("Faith Dike", result.getFullName());
+        assertEquals("Received", result.getStatus());
+        assertEquals("Pending", result.getPaymentStatus());
+        assertTrue(result.isLocked());
+        assertFalse(result.isPrinted());
+        assertFalse(result.isArchived());
+        assertEquals(0, new BigDecimal("9500").compareTo(result.getTotal()));
+        assertEquals(2, result.getItems().size());
+
+        verify(orderRepository, times(1)).save(any(Order.class));
+    }
+
+    @Test
+    void createOrder_doesNotRequireAnUserAccount() {
+        // No userRepository dependency exists at all any more — this test's mere
+        // presence (and passing) proves an anonymous customer order works.
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Order result = orderService.createOrder(orderRequest);
+        assertNotNull(result);
+    }
+
+    @Test
+    void updateOrder_appliesOnlyProvidedFields() {
+        Order existing = new Order();
+        existing.setId(100L);
+        existing.setStatus("Received");
+        existing.setTotal(new BigDecimal("9500"));
+        existing.setPaymentStatus("Pending");
+        existing.setArchived(false);
+        existing.setPrinted(false);
+
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(orderRepository.save(any(Order.class))).thenReturn(existing);
+
+        OrderUpdateRequest update = new OrderUpdateRequest();
+        update.setStatus("Washing");
+
+        Order result = orderService.updateOrder(100L, update);
+
+        assertEquals("Washing", result.getStatus());
+        // Untouched fields stay as they were
+        assertEquals(0, new BigDecimal("9500").compareTo(result.getTotal()));
+        assertEquals("Pending", result.getPaymentStatus());
+        verify(orderRepository, times(1)).save(existing);
+    }
+
+    @Test
+    void updateOrder_throwsWhenOrderNotFound() {
+        when(orderRepository.findById(999L)).thenReturn(Optional.empty());
+        OrderUpdateRequest update = new OrderUpdateRequest();
+        update.setStatus("Washing");
+
+        assertThrows(RuntimeException.class, () -> orderService.updateOrder(999L, update));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+}

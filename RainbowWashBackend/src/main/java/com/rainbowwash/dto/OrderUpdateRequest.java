@@ -10,4 +10,5 @@ public class OrderUpdateRequest {
     private String paymentStatus;
     private Boolean archived;
     private Boolean printed;
+    private String paymentMethod;
 }

@@ -23,6 +23,7 @@ public class CleaningBooking {
     private BigDecimal payable;
     private String transferNote;
     private String paymentStatus;
+    private String paymentMethod = "Transfer"; // "Transfer" | "Card"
     private String status; // "Pending Quote", "Confirmed", etc.
 
     private String fullName;

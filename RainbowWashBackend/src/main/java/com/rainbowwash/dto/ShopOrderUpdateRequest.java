@@ -8,4 +8,5 @@ public class ShopOrderUpdateRequest {
     private String paymentStatus;
     private Boolean archived;
     private Boolean printed;
+    private String paymentMethod;
 }

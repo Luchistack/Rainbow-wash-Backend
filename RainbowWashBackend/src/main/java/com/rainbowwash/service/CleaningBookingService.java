@@ -60,6 +60,7 @@ public class CleaningBookingService {
         if (request.getPaymentStatus() != null) booking.setPaymentStatus(request.getPaymentStatus());
         if (request.getArchived() != null) booking.setArchived(request.getArchived());
         if (request.getPrinted() != null) booking.setPrinted(request.getPrinted());
+        if (request.getPaymentMethod() != null) booking.setPaymentMethod(request.getPaymentMethod());
 
         return bookingRepository.save(booking);
     }

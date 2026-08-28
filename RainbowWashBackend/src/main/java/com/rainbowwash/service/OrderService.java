@@ -77,6 +77,7 @@ public class OrderService {
         if (request.getPaymentStatus() != null) order.setPaymentStatus(request.getPaymentStatus());
         if (request.getArchived() != null) order.setArchived(request.getArchived());
         if (request.getPrinted() != null) order.setPrinted(request.getPrinted());
+        if (request.getPaymentMethod() != null) order.setPaymentMethod(request.getPaymentMethod());
 
         return orderRepository.save(order);
     }

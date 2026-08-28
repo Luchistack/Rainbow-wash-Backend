@@ -33,7 +33,8 @@ public class ShopOrder {
     private BigDecimal total;
 
     private String status; // "Received" | "Packed" | "Out for Delivery" | "Completed"
-    private String paymentStatus; // "Pending" | "Sent" | "Confirmed"
+    private String paymentStatus; // "Pending" | "Received" | "Confirmed"
+    private String paymentMethod = "Transfer"; // "Transfer" | "Card"
 
     private String createdBy; // staff name for walk-in sales, null for customer web orders
 
