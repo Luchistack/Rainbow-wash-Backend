@@ -1,103 +1,83 @@
 package com.rainbowwash.service;
 
+import com.rainbowwash.dto.OrderItemRequest;
 import com.rainbowwash.dto.OrderRequest;
-import com.rainbowwash.dto.OrderResponse;
-import com.rainbowwash.model.*;
-import com.rainbowwash.repository.LaundryServiceRepository;
+import com.rainbowwash.dto.OrderUpdateRequest;
+import com.rainbowwash.model.Order;
+import com.rainbowwash.model.OrderItem;
 import com.rainbowwash.repository.OrderRepository;
-import com.rainbowwash.repository.UserRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 public class OrderService {
 
     private final OrderRepository orderRepository;
-    private final UserRepository userRepository;
-    private final LaundryServiceRepository laundryServiceRepository;
 
-    public OrderService(OrderRepository orderRepository, UserRepository userRepository, LaundryServiceRepository laundryServiceRepository) {
+    public OrderService(OrderRepository orderRepository) {
         this.orderRepository = orderRepository;
-        this.userRepository = userRepository;
-        this.laundryServiceRepository = laundryServiceRepository;
     }
 
-    @Transactional
-    public OrderResponse createOrder(OrderRequest request) {
-        User user = userRepository.findById(request.getUserId())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
+    public Order createOrder(OrderRequest request) {
         Order order = new Order();
-        order.setUser(user);
-        order.setDeliveryAddress(request.getDeliveryAddress());
-        order.setStatus(OrderStatus.PENDING);
+        order.setReferenceId("LND-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase());
+        order.setFulfilment(request.getFulfilment());
+        order.setAddress(request.getAddress());
+        order.setPreferredDate(request.getPreferredDate());
+        order.setPreferredTime(request.getPreferredTime());
+        order.setPaymentMethod(request.getPaymentMethod());
+        order.setTransferNote(request.getTransferNote());
+        order.setPaymentStatus("Pending");
+        order.setTotal(request.getTotal());
+        order.setStatus("Received");
+        order.setFullName(request.getFullName());
+        order.setPhone(request.getPhone());
+        order.setEmail(request.getEmail());
+        order.setCreatedBy(request.getCreatedBy());
+        order.setPlacedAt(LocalDateTime.now());
+        order.setArchived(false);
+        order.setLocked(true);
+        order.setPrinted(false);
 
-        BigDecimal totalAmount = BigDecimal.ZERO;
-
-        List<OrderItem> orderItems = request.getItems().stream().map(itemReq -> {
-            LaundryService service = laundryServiceRepository.findById(itemReq.getServiceId())
-                    .orElseThrow(() -> new RuntimeException("Laundry service not found: " + itemReq.getServiceId()));
-
-            BigDecimal subTotal = service.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
-
+        List<OrderItem> items = request.getItems().stream().map(itemReq -> {
             OrderItem item = new OrderItem();
             item.setOrder(order);
-            item.setLaundryService(service);
-            item.setQuantity(itemReq.getQuantity());
-            item.setSubTotal(subTotal);
-
+            item.setName(itemReq.getName());
+            item.setQty(itemReq.getQty());
+            item.setUnit(itemReq.getUnit());
+            item.setPrice(itemReq.getPrice());
             return item;
         }).collect(Collectors.toList());
+        order.setItems(items);
 
-        for (OrderItem item : orderItems) {
-            totalAmount = totalAmount.add(item.getSubTotal());
-        }
-
-        order.setOrderItems(orderItems);
-        order.setTotalAmount(totalAmount);
-
-        Order savedOrder = orderRepository.save(order);
-        return mapToResponse(savedOrder);
+        return orderRepository.save(order);
     }
 
-    public List<OrderResponse> getAllOrders() {
-        return orderRepository.findAll().stream().map(this::mapToResponse).collect(Collectors.toList());
+    public List<Order> getAllOrders() {
+        return orderRepository.findAll();
     }
 
-    public List<OrderResponse> getOrdersByUser(Long userId) {
-        return orderRepository.findByUserId(userId).stream().map(this::mapToResponse).collect(Collectors.toList());
+    // Public lookup for the Track Order page — returns null (controller maps to
+    // 404) rather than throwing, since "not found" is an expected, routine result
+    // here, not an error condition.
+    public Order findByReference(String referenceId) {
+        return orderRepository.findByReferenceId(referenceId).orElse(null);
     }
 
-    public OrderResponse updateOrderStatus(Long orderId, OrderStatus status) {
-        Order order = orderRepository.findById(orderId)
+    public Order updateOrder(Long id, OrderUpdateRequest request) {
+        Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Order not found"));
-        order.setStatus(status);
-        return mapToResponse(orderRepository.save(order));
-    }
 
-    private OrderResponse mapToResponse(Order order) {
-        OrderResponse res = new OrderResponse();
-        res.setId(order.getId());
-        res.setUserId(order.getUser().getId());
-        res.setCustomerName(order.getUser().getFullName());
-        res.setTotalAmount(order.getTotalAmount());
-        res.setStatus(order.getStatus());
-        res.setDeliveryAddress(order.getDeliveryAddress());
-        res.setCreatedAt(order.getCreatedAt());
+        if (request.getStatus() != null) order.setStatus(request.getStatus());
+        if (request.getTotal() != null) order.setTotal(request.getTotal());
+        if (request.getPaymentStatus() != null) order.setPaymentStatus(request.getPaymentStatus());
+        if (request.getArchived() != null) order.setArchived(request.getArchived());
+        if (request.getPrinted() != null) order.setPrinted(request.getPrinted());
 
-        List<OrderResponse.ItemDetail> details = order.getOrderItems().stream().map(i -> {
-            OrderResponse.ItemDetail detail = new OrderResponse.ItemDetail();
-            detail.setServiceName(i.getLaundryService().getName());
-            detail.setQuantity(i.getQuantity());
-            detail.setSubTotal(i.getSubTotal());
-            return detail;
-        }).collect(Collectors.toList());
-
-        res.setItems(details);
-        return res;
+        return orderRepository.save(order);
     }
 }

@@ -9,26 +9,22 @@ import java.math.BigDecimal;
 @Data
 @NoArgsConstructor
 @Entity
-@Table(name = "order_items")
-public class OrderItem {
+@Table(name = "shop_order_items")
+public class ShopOrderItem {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "order_id", nullable = false)
-    private Order order;
+    @JoinColumn(name = "shop_order_id", nullable = false)
+    private ShopOrder shopOrder;
 
     @Column(nullable = false)
     private String name;
 
-    // BigDecimal, not int — self/staff wash lines are priced by kg and can be
-    // fractional (e.g. 3.5kg).
     @Column(nullable = false)
-    private BigDecimal qty;
-
-    private String unit; // "kg" or blank for piece-based items
+    private int qty;
 
     @Column(nullable = false)
     private BigDecimal price;

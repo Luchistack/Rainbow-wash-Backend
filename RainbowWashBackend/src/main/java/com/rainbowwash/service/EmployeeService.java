@@ -88,6 +88,22 @@ public class EmployeeService {
         return tempPassword;
     }
 
+    // Permanently removes a Staff or Manager account (e.g. someone who has left the
+    // company). Deliberately refuses to delete Admin accounts through this path —
+    // that would let one Admin lock everyone else out, including other Admins.
+    // If you genuinely need to remove an Admin account, that has to be done directly
+    // against the database, not through this employee-management endpoint.
+    public void deleteEmployee(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (user.getRole() == UserRole.ADMIN) {
+            throw new RuntimeException("Admin accounts cannot be deleted from this screen.");
+        }
+
+        userRepository.delete(user);
+    }
+
     // Produces something like "Coral-Otter-4821": two random dictionary words plus
     // a 4-digit number. Memorable and easy to retype correctly, while still random
     // enough to be safe as a one-time temp password (the user is always forced to

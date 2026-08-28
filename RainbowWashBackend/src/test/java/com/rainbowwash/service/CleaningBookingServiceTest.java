@@ -68,14 +68,15 @@ class CleaningBookingServiceTest {
     }
 
     @Test
-    void getAllBookings_ShouldReturnUnarchivedBookings() {
-        // Arrange
+    void getAllBookings_ShouldReturnAllBookings() {
+        // Arrange — includes both archived and non-archived, since History needs
+        // to see everything; Today/History filtering now happens client-side.
         CleaningBooking booking = new CleaningBooking();
         booking.setId(1L);
         booking.setService("Standard Cleaning");
         booking.setArchived(false);
 
-        when(cleaningBookingRepository.findByArchivedFalse()).thenReturn(List.of(booking));
+        when(cleaningBookingRepository.findAll()).thenReturn(List.of(booking));
 
         // Act
         List<CleaningBooking> bookings = cleaningBookingService.getAllBookings();
@@ -85,6 +86,6 @@ class CleaningBookingServiceTest {
         assertEquals(1, bookings.size());
         assertEquals("Standard Cleaning", bookings.get(0).getService());
 
-        verify(cleaningBookingRepository, times(1)).findByArchivedFalse();
+        verify(cleaningBookingRepository, times(1)).findAll();
     }
 }

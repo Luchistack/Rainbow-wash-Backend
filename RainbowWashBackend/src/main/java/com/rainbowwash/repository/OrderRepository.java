@@ -2,10 +2,9 @@ package com.rainbowwash.repository;
 
 import com.rainbowwash.model.Order;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
-import java.util.List;
 
-@Repository
+import java.util.Optional;
+
 public interface OrderRepository extends JpaRepository<Order, Long> {
-    List<Order> findByUserId(Long userId);
+    Optional<Order> findByReferenceId(String referenceId);
 }

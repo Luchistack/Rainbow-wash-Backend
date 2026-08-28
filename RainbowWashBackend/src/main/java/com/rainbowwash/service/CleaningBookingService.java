@@ -1,6 +1,7 @@
 package com.rainbowwash.service;
 
 import com.rainbowwash.dto.CleaningBookingRequest;
+import com.rainbowwash.dto.CleaningBookingUpdateRequest;
 import com.rainbowwash.model.CleaningBooking;
 import com.rainbowwash.repository.CleaningBookingRepository;
 import org.springframework.stereotype.Service;
@@ -36,11 +37,30 @@ public class CleaningBookingService {
         booking.setStatus("Pending Quote");
         booking.setPlacedAt(LocalDateTime.now());
         booking.setArchived(false);
+        booking.setLocked(true);
+        booking.setPrinted(false);
 
         return bookingRepository.save(booking);
     }
 
     public List<CleaningBooking> getAllBookings() {
-        return bookingRepository.findByArchivedFalse();
+        return bookingRepository.findAll();
+    }
+
+    // Partial update — only the fields staff actually change from the dashboard
+    // (status, confirmed price, payment status, archived, printed). Never touches
+    // customer-entered fields like name/phone/service, matching the "content is
+    // locked after submission" rule from the PRD.
+    public CleaningBooking updateBooking(Long id, CleaningBookingUpdateRequest request) {
+        CleaningBooking booking = bookingRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Booking not found"));
+
+        if (request.getStatus() != null) booking.setStatus(request.getStatus());
+        if (request.getPayable() != null) booking.setPayable(request.getPayable());
+        if (request.getPaymentStatus() != null) booking.setPaymentStatus(request.getPaymentStatus());
+        if (request.getArchived() != null) booking.setArchived(request.getArchived());
+        if (request.getPrinted() != null) booking.setPrinted(request.getPrinted());
+
+        return bookingRepository.save(booking);
     }
 }

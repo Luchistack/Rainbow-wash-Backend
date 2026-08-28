@@ -65,4 +65,19 @@ public class AdminController {
                     .body(Map.of("error", "Failed to reset password: " + e.getMessage()));
         }
     }
+
+    @DeleteMapping("/employees/{id}")
+    public ResponseEntity<?> deleteEmployee(@PathVariable Long id) {
+        try {
+            employeeService.deleteEmployee(id);
+            return ResponseEntity.ok(Map.of("message", "Account deleted."));
+        } catch (RuntimeException e) {
+            // e.g. "User not found" or "Admin accounts cannot be deleted from this screen."
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to delete account: " + e.getMessage()));
+        }
+    }
 }

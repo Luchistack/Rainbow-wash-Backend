@@ -31,4 +31,10 @@ public class CleaningBooking {
 
     private LocalDateTime placedAt;
     private boolean archived;
+
+    // Locked the moment a booking is created (staff can't edit/delete it after
+    // submission, only Manager/Admin can) — printed becomes true only once a
+    // real print button is clicked, after which nobody can delete it.
+    private boolean locked = true;
+    private boolean printed = false;
 }

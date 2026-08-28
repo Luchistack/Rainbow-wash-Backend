@@ -10,20 +10,10 @@ import java.math.BigDecimal;
 import java.util.List;
 
 @Data
-public class OrderRequest {
+public class ShopOrderRequest {
     @NotEmpty(message = "Order must contain at least one item")
     @Valid
-    private List<OrderItemRequest> items;
-
-    private String fulfilment;
-    private String address;
-    private String preferredDate;
-    private String preferredTime;
-    private String paymentMethod;
-    private String transferNote;
-
-    @NotNull(message = "Total is required")
-    private BigDecimal total;
+    private List<ShopOrderItemRequest> items;
 
     @NotBlank(message = "Full name is required")
     private String fullName;
@@ -31,9 +21,10 @@ public class OrderRequest {
     @NotBlank(message = "Phone number is required")
     private String phone;
 
-    private String email;
+    private String mode;
 
-    // Set by the dashboard when staff create a walk-in order; left null for
-    // orders customers place themselves on the public site.
+    @NotNull(message = "Total is required")
+    private BigDecimal total;
+
     private String createdBy;
 }
