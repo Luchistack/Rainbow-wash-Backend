@@ -6,6 +6,7 @@ import com.rainbowwash.model.ShopOrder;
 import com.rainbowwash.service.ShopOrderService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -34,5 +35,13 @@ public class ShopOrderController {
     @PatchMapping("/{id}")
     public ResponseEntity<ShopOrder> updateShopOrder(@PathVariable Long id, @RequestBody ShopOrderUpdateRequest request) {
         return ResponseEntity.ok(shopOrderService.updateShopOrder(id, request));
+    }
+
+    // Admin only — permanent removal, only ever reachable from the History tab.
+    @PreAuthorize("hasRole('ADMIN')")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteShopOrder(@PathVariable Long id) {
+        shopOrderService.deleteShopOrder(id);
+        return ResponseEntity.noContent().build();
     }
 }

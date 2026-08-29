@@ -64,4 +64,8 @@ public class CleaningBookingService {
 
         return bookingRepository.save(booking);
     }
+
+    public void deleteBooking(Long id) {
+        bookingRepository.deleteById(id);
+    }
 }

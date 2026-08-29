@@ -38,4 +38,12 @@ public class CleaningBookingController {
     public ResponseEntity<CleaningBooking> updateBooking(@PathVariable Long id, @RequestBody CleaningBookingUpdateRequest request) {
         return ResponseEntity.ok(bookingService.updateBooking(id, request));
     }
+
+    // Admin only — permanent removal, only ever reachable from the History tab.
+    @PreAuthorize("hasRole('ADMIN')")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteBooking(@PathVariable Long id) {
+        bookingService.deleteBooking(id);
+        return ResponseEntity.noContent().build();
+    }
 }

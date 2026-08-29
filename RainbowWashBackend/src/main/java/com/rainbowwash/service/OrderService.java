@@ -81,4 +81,11 @@ public class OrderService {
 
         return orderRepository.save(order);
     }
+
+    // Permanent removal — only called from the Admin-only History delete
+    // action. Everything else (archive) is a soft, reversible-in-spirit
+    // action that just hides a record from the Today's list.
+    public void deleteOrder(Long id) {
+        orderRepository.deleteById(id);
+    }
 }

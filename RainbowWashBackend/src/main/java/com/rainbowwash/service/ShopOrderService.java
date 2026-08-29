@@ -65,4 +65,8 @@ public class ShopOrderService {
 
         return shopOrderRepository.save(order);
     }
+
+    public void deleteShopOrder(Long id) {
+        shopOrderRepository.deleteById(id);
+    }
 }
