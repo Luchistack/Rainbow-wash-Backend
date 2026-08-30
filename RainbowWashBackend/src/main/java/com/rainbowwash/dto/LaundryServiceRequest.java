@@ -18,6 +18,10 @@ public class LaundryServiceRequest {
     @DecimalMin(value = "0.0", inclusive = false, message = "Price must be greater than zero")
     private BigDecimal price;
 
+    // Optional — only set for Dry Cleaning (deepPrice) and Shoe Care (deepPrice + repairPrice).
+    private BigDecimal deepPrice;
+    private BigDecimal repairPrice;
+
     @NotBlank(message = "Category is required")
     private String category;
 

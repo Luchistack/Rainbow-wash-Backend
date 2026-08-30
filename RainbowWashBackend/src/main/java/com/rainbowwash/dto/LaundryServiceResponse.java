@@ -13,6 +13,8 @@ public class LaundryServiceResponse {
     private String name;
     private String description;
     private BigDecimal price;
+    private BigDecimal deepPrice;
+    private BigDecimal repairPrice;
     private String category;
     private int stock;
     private boolean available;

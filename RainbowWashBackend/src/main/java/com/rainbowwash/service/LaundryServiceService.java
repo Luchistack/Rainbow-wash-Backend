@@ -19,13 +19,17 @@ public class LaundryServiceService {
     }
 
     public LaundryServiceResponse createService(LaundryServiceRequest request) {
-        if (serviceRepository.existsByName(request.getName())) {
-            throw new RuntimeException("Service with this name already exists");
+        // Scoped to (name, category) rather than name alone — "Wash & Dry" needs
+        // to exist once under Self Wash AND once under Staff Wash, for example.
+        if (serviceRepository.existsByNameAndCategory(request.getName(), request.getCategory())) {
+            throw new RuntimeException("A service with this name already exists in this category");
         }
         LaundryService service = new LaundryService();
         service.setName(request.getName());
         service.setDescription(request.getDescription());
         service.setPrice(request.getPrice());
+        service.setDeepPrice(request.getDeepPrice());
+        service.setRepairPrice(request.getRepairPrice());
         service.setCategory(request.getCategory());
         service.setStock(request.getStock());
         service.setAvailable(request.isAvailable());
@@ -47,6 +51,8 @@ public class LaundryServiceService {
         service.setName(request.getName());
         service.setDescription(request.getDescription());
         service.setPrice(request.getPrice());
+        service.setDeepPrice(request.getDeepPrice());
+        service.setRepairPrice(request.getRepairPrice());
         service.setCategory(request.getCategory());
         service.setStock(request.getStock());
         service.setAvailable(request.isAvailable());
@@ -65,6 +71,8 @@ public class LaundryServiceService {
                 service.getName(),
                 service.getDescription(),
                 service.getPrice(),
+                service.getDeepPrice(),
+                service.getRepairPrice(),
                 service.getCategory(),
                 service.getStock(),
                 service.isAvailable()
