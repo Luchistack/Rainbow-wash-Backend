@@ -20,12 +20,14 @@ public class SecurityConfig {
     private final JwtTokenProvider tokenProvider;
     private final UserDetailsService userDetailsService;
     private final CorsConfigurationSource corsConfigurationSource;
+    private final RateLimitFilter rateLimitFilter;
 
     public SecurityConfig(JwtTokenProvider tokenProvider, UserDetailsService userDetailsService,
-                          CorsConfigurationSource corsConfigurationSource) {
+                          CorsConfigurationSource corsConfigurationSource, RateLimitFilter rateLimitFilter) {
         this.tokenProvider = tokenProvider;
         this.userDetailsService = userDetailsService;
         this.corsConfigurationSource = corsConfigurationSource;
+        this.rateLimitFilter = rateLimitFilter;
     }
 
     @Bean
@@ -57,6 +59,10 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 );
 
+        // Rate limiting runs first, before authentication is even checked —
+        // a request that's over its limit should be rejected immediately,
+        // without spending effort validating a token or querying the database.
+        http.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
