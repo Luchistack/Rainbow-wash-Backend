@@ -33,7 +33,7 @@ public class ShopOrderController {
     }
 
     @PatchMapping("/{id}")
-    public ResponseEntity<ShopOrder> updateShopOrder(@PathVariable Long id, @RequestBody ShopOrderUpdateRequest request) {
+    public ResponseEntity<ShopOrder> updateShopOrder(@PathVariable Long id, @Valid @RequestBody ShopOrderUpdateRequest request) {
         return ResponseEntity.ok(shopOrderService.updateShopOrder(id, request));
     }
 

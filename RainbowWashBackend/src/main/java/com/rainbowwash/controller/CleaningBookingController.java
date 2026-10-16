@@ -23,7 +23,6 @@ public class CleaningBookingController {
 
     @PostMapping
     public ResponseEntity<CleaningBooking> createBooking(@Valid @RequestBody CleaningBookingRequest request) {
-        System.out.println("RECEIVED BOOKING REQUEST: " + request);
         return ResponseEntity.ok(bookingService.createBooking(request));
     }
 
@@ -35,7 +34,7 @@ public class CleaningBookingController {
     // Staff/Manager/Admin only (any authenticated dashboard user) — content edits
     // are further restricted client-side once printed, per the PRD's locking rule.
     @PatchMapping("/{id}")
-    public ResponseEntity<CleaningBooking> updateBooking(@PathVariable Long id, @RequestBody CleaningBookingUpdateRequest request) {
+    public ResponseEntity<CleaningBooking> updateBooking(@PathVariable Long id, @Valid @RequestBody CleaningBookingUpdateRequest request) {
         return ResponseEntity.ok(bookingService.updateBooking(id, request));
     }
 

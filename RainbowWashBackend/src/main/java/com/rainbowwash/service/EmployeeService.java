@@ -72,7 +72,7 @@ public class EmployeeService {
                 .collect(Collectors.toList());
     }
 
-    // Generates a brand new temporary password for an existing user and overwrites
+    // Generates a brand-new temporary password for an existing user and overwrites
     // their stored hash. This is the safe substitute for "showing" a forgotten
     // password: the old one is never recoverable, but the Admin can always issue a
     // fresh one and relay it to the staff member.

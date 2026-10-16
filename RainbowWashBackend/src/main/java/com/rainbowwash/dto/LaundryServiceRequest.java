@@ -19,7 +19,9 @@ public class LaundryServiceRequest {
     private BigDecimal price;
 
     // Optional — only set for Dry Cleaning (deepPrice) and Shoe Care (deepPrice + repairPrice).
+    @DecimalMin(value = "0.00", message = "Deep-cleaning price cannot be negative")
     private BigDecimal deepPrice;
+    @DecimalMin(value = "0.00", message = "Repair price cannot be negative")
     private BigDecimal repairPrice;
 
     @NotBlank(message = "Category is required")

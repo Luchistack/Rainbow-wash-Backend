@@ -3,13 +3,18 @@ package com.rainbowwash.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rainbowwash.dto.LoginRequest;
 import com.rainbowwash.model.UserRole;
+import com.rainbowwash.model.User;
 import com.rainbowwash.security.JwtTokenProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import com.rainbowwash.repository.UserRepository;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -23,6 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AuthController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class AuthControllerTest {
 
     @Autowired
@@ -37,11 +43,17 @@ class AuthControllerTest {
     @MockBean
     private JwtTokenProvider tokenProvider;
 
+    @MockBean
+    private UserRepository userRepository;
+
+    @MockBean
+    private PasswordEncoder passwordEncoder;
+
     @Test
     @DisplayName("Successfully authenticate user and return JWT token")
     void testAuthenticateUser_Success() throws Exception {
         LoginRequest request = new LoginRequest();
-        request.setEmail("AdminUser");
+        request.setEmail("admin-test@example.com");
 //        request.setRole(UserRole.ADMIN);
         request.setPassword("Password123!");
 
@@ -50,7 +62,15 @@ class AuthControllerTest {
                 .thenReturn(authentication);
         when(tokenProvider.generateToken(authentication)).thenReturn("mock-jwt-token-12345");
 
-        mockMvc.perform(post("/api/auth/login")
+        User user = new User();
+        user.setFullName("Admin User");
+        user.setEmail("admin-test@example.com");
+        user.setPassword("encoded-password");
+        user.setRole(UserRole.ADMIN);
+        when(userRepository.findByEmail("admin-test@example.com"))
+                .thenReturn(java.util.Optional.of(user));
+
+        mockMvc.perform(post("/api/auth/login").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -62,18 +82,18 @@ class AuthControllerTest {
     @DisplayName("Fail authentication on invalid credentials (BadCredentialsException)")
     void testAuthenticateUser_InvalidCredentials() throws Exception {
         LoginRequest request = new LoginRequest();
-        request.setEmail("AdminUser");
+        request.setEmail("admin-test@example.com");
 //        request.setRole(UserRole.ADMIN);
         request.setPassword("WrongPassword");
 
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenThrow(new BadCredentialsException("Bad credentials"));
 
-        mockMvc.perform(post("/api/auth/login")
+        mockMvc.perform(post("/api/auth/login").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error").value("Invalid name or password. Please try again."));
+                .andExpect(jsonPath("$.error").value("Invalid email or password. Please try again."));
     }
 
     @Test
@@ -84,7 +104,7 @@ class AuthControllerTest {
         request.setPassword(null); // Missing role
         request.setPassword(""); // Blank password
 
-        mockMvc.perform(post("/api/auth/login")
+        mockMvc.perform(post("/api/auth/login").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());

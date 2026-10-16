@@ -45,7 +45,7 @@ public class OrderController {
 
     // Authenticated (dashboard) — status, total, payment status, archived, printed.
     @PatchMapping("/{id}")
-    public ResponseEntity<Order> updateOrder(@PathVariable Long id, @RequestBody OrderUpdateRequest request) {
+    public ResponseEntity<Order> updateOrder(@PathVariable Long id, @Valid @RequestBody OrderUpdateRequest request) {
         return ResponseEntity.ok(orderService.updateOrder(id, request));
     }
 

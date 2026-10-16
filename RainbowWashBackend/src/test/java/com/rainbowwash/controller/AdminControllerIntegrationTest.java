@@ -48,7 +48,9 @@ class AdminControllerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk()) // Controller returns 200 OK with a string message
-                .andExpect(content().string("Employee account created successfully. Temporary credentials sent."));
+                .andExpect(jsonPath("$.message").value("Account created for Jane Smith"))
+                .andExpect(jsonPath("$.email").value("jane@rainbowwash.com"))
+                .andExpect(jsonPath("$.tempPassword").isNotEmpty());
     }
 
     @Test

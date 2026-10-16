@@ -36,6 +36,8 @@ public class Order {
     @Column(nullable = false)
     private BigDecimal total;
 
+    private BigDecimal deliveryFee = BigDecimal.ZERO;
+
     private String status; // "Received" | "Washing" | "Completed" | "Delivered"
 
     private String fullName;

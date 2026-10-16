@@ -8,6 +8,7 @@ import com.rainbowwash.model.OrderItem;
 import com.rainbowwash.repository.OrderRepository;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -32,6 +33,10 @@ public class OrderService {
         order.setPaymentMethod(request.getPaymentMethod());
         order.setTransferNote(request.getTransferNote());
         order.setPaymentStatus("Pending");
+        BigDecimal deliveryFee = "pickup".equalsIgnoreCase(request.getFulfilment())
+                ? (request.getDeliveryFee() != null ? request.getDeliveryFee() : new BigDecimal("2500.00"))
+                : BigDecimal.ZERO;
+        order.setDeliveryFee(deliveryFee);
         order.setTotal(request.getTotal());
         order.setStatus("Received");
         order.setFullName(request.getFullName());
