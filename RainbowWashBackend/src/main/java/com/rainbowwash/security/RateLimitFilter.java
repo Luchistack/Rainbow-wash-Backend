@@ -29,7 +29,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     // path -> { maxRequests, windowMillis }
     private static final Map<String, int[]> LIMITS = Map.of(
-            "/api/auth/login", new int[]{5, 5 * 60 * 1000},   // 5 attempts per 5 minutes — brute-force protection
+            "/api/auth/login", new int[]{8, 5 * 60 * 1000},   // 8 attempts per 5 minutes — brute-force protection
             "/api/orders", new int[]{10, 60 * 1000},           // 10 laundry orders per minute per IP
             "/api/bookings", new int[]{10, 60 * 1000},         // 10 cleaning bookings per minute per IP
             "/api/shop-orders", new int[]{10, 60 * 1000}       // 10 shop orders per minute per IP
