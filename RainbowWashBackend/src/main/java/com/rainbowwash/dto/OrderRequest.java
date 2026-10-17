@@ -48,9 +48,8 @@ public class OrderRequest {
     @Pattern(regexp = "^[+0-9() .-]{7,25}$", message = "Phone number contains invalid characters or has an invalid length")
     private String phone;
 
-    @NotBlank(message = "Email is required")
     @Size(max = 254, message = "Email must be 254 characters or fewer")
-    @Pattern(regexp = "(?i)^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?(?:\\.[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?)*\\.com$", message = "Email must be valid and end in .com")
+    @Pattern(regexp = "(?i)^$|^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?(?:\\.[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?)*\\.com$", message = "Email must be valid and end in .com")
     private String email;
 
     // Set by the dashboard when staff create a walk-in order; left null for
