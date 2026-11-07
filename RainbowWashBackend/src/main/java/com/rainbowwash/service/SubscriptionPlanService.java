@@ -28,11 +28,11 @@ public class SubscriptionPlanService implements CommandLineRunner {
 
         repository.saveAll(List.of(
             new SubscriptionPlan(null, "Regular", new BigDecimal("50000"),
-                "2 weeks", "Regular clothes only", true),
+                "2 weeks", "Regular clothes only", null, true),
             new SubscriptionPlan(null, "Exclusive", new BigDecimal("100000"),
-                "2 weeks", "Duvets and regular clothes", true),
+                "2 weeks", "Duvets and regular clothes", null, true),
             new SubscriptionPlan(null, "Premium", new BigDecimal("200000"),
-                "1 month", "Everything, all laundry types", true)
+                "1 month", "Everything, all laundry types", null, true)
         ));
     }
 
@@ -71,13 +71,14 @@ public class SubscriptionPlanService implements CommandLineRunner {
         plan.setPrice(request.getPrice());
         plan.setDuration(request.getDuration().trim());
         plan.setCovers(request.getCovers().trim());
+        plan.setKgAllowance(request.getKgAllowance());
         plan.setActive(request.isActive());
     }
 
     private SubscriptionPlanResponse map(SubscriptionPlan plan) {
         return new SubscriptionPlanResponse(
             plan.getId(), plan.getName(), plan.getPrice(),
-            plan.getDuration(), plan.getCovers(), plan.isActive()
+            plan.getDuration(), plan.getCovers(), plan.getKgAllowance(), plan.isActive()
         );
     }
 }

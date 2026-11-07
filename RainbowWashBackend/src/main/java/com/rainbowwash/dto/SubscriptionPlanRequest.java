@@ -23,5 +23,9 @@ public class SubscriptionPlanRequest {
     @NotBlank(message = "Coverage details are required")
     private String covers;
 
+    @NotNull(message = "KG allowance is required")
+    @DecimalMin(value = "0.01", message = "KG allowance must be greater than zero")
+    private BigDecimal kgAllowance;
+
     private boolean active = true;
 }

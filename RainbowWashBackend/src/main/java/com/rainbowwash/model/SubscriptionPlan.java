@@ -30,6 +30,9 @@ public class SubscriptionPlan {
     @Column(nullable = false, length = 1000)
     private String covers;
 
+    @Column(precision = 10, scale = 2)
+    private BigDecimal kgAllowance;
+
     @Column(nullable = false)
     private boolean active = true;
 }

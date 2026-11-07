@@ -15,5 +15,6 @@ public class SubscriptionPlanResponse {
     private BigDecimal price;
     private String duration;
     private String covers;
+    private BigDecimal kgAllowance;
     private boolean active;
 }
