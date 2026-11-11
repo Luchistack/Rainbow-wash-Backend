@@ -33,6 +33,7 @@ public class CleaningBookingService {
         booking.setFullName(request.getFullName());
         booking.setPhone(request.getPhone());
         booking.setEmail(request.getEmail());
+        booking.setDescription(request.getDescription());
         booking.setPaymentStatus("Pending");
         booking.setStatus("Pending Quote");
         booking.setPlacedAt(LocalDateTime.now());

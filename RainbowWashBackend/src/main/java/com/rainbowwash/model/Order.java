@@ -43,6 +43,8 @@ public class Order {
     private String fullName;
     private String phone;
     private String email;
+    @Column(length = 1000)
+    private String description;
 
     // Name of the staff member who created this as a walk-in order, null for
     // orders customers placed themselves on the public site.

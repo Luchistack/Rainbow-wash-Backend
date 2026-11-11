@@ -27,6 +27,8 @@ public class ShopOrder {
 
     private String fullName;
     private String phone;
+    @Column(length = 1000)
+    private String description;
     private String mode; // "pickup" | "delivery"
 
     @Column(nullable = false)

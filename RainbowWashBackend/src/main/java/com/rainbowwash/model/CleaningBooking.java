@@ -29,6 +29,8 @@ public class CleaningBooking {
     private String fullName;
     private String phone;
     private String email;
+    @Column(length = 1000)
+    private String description;
 
     private LocalDateTime placedAt;
     private boolean archived;

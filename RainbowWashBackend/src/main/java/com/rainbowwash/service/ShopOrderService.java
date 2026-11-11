@@ -26,6 +26,7 @@ public class ShopOrderService {
         order.setReferenceId("SHOP-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase());
         order.setFullName(request.getFullName());
         order.setPhone(request.getPhone());
+        order.setDescription(request.getDescription());
         order.setMode(request.getMode());
         order.setTotal(request.getTotal());
         order.setStatus("Received");

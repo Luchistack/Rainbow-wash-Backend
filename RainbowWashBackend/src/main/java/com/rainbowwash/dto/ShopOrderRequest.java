@@ -26,6 +26,9 @@ public class ShopOrderRequest {
     @Pattern(regexp = "^[+0-9() .-]{7,25}$", message = "Phone number contains invalid characters or has an invalid length")
     private String phone;
 
+    @Size(max = 1000, message = "Description must be 1000 characters or fewer")
+    private String description;
+
     @Pattern(regexp = "(?i)^(|pickup|delivery)$", message = "Mode must be pickup or delivery")
     private String mode;
 

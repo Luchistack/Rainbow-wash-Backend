@@ -52,6 +52,9 @@ public class OrderRequest {
     @Pattern(regexp = "(?i)^$|^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?(?:\\.[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?)*\\.com$", message = "Email must be valid and end in .com")
     private String email;
 
+    @Size(max = 1000, message = "Description must be 1000 characters or fewer")
+    private String description;
+
     // Set by the dashboard when staff create a walk-in order; left null for
     // orders customers place themselves on the public site.
     private String createdBy;

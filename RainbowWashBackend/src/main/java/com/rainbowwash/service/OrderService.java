@@ -42,6 +42,7 @@ public class OrderService {
         order.setFullName(request.getFullName());
         order.setPhone(request.getPhone());
         order.setEmail(request.getEmail());
+        order.setDescription(request.getDescription());
         order.setCreatedBy(request.getCreatedBy());
         order.setPlacedAt(LocalDateTime.now());
         order.setArchived(false);

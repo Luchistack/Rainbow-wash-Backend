@@ -47,4 +47,7 @@ public class CleaningBookingRequest {
     @Size(max = 254, message = "Email must be 254 characters or fewer")
     @Pattern(regexp = "(?i)^(?:$|[^@\\s]+@[^@\\s]+[.]com)$", message = "Email must be valid and end in .com")
     private String email;
+
+    @Size(max = 1000, message = "Description must be 1000 characters or fewer")
+    private String description;
 }

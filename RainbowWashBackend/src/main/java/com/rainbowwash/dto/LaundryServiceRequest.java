@@ -4,6 +4,9 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
+import java.util.List;
 import lombok.Data;
 import java.math.BigDecimal;
 
@@ -12,6 +15,7 @@ public class LaundryServiceRequest {
     @NotBlank(message = "Service name is required")
     private String name;
 
+    @Size(max = 1000, message = "Description must be 1000 characters or fewer")
     private String description;
 
     @NotNull(message = "Price is required")
@@ -24,7 +28,20 @@ public class LaundryServiceRequest {
     @DecimalMin(value = "0.00", message = "Repair price cannot be negative")
     private BigDecimal repairPrice;
 
+    // Optional Express-only settings.
+    @Size(max = 80, message = "Turnaround must be 80 characters or fewer")
+    private String turnaround;
+
+    // Legacy single-option fields retained for compatibility.
+    @Size(max = 80, message = "Pricing unit must be 80 characters or fewer")
+    private String pricingUnit;
+
+    // New manually configured Express options. Null means preserve existing options on update.
+    @Valid
+    private List<ExpressPricingOptionRequest> expressPricingOptions;
+
     @NotBlank(message = "Category is required")
+    @Size(max = 100, message = "Category must be 100 characters or fewer")
     private String category;
 
     @Min(value = 5, message = "New stock always starts at 5 units or more")

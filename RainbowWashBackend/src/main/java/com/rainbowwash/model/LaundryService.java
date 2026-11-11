@@ -24,6 +24,7 @@ public class LaundryService {
     @Column(nullable = false)
     private String name;
 
+    @Column(length = 1000)
     private String description;
 
     @Column(nullable = false)
@@ -36,6 +37,18 @@ public class LaundryService {
     // backend-synced place with the CRUD machinery already built and tested.
     private BigDecimal deepPrice;
     private BigDecimal repairPrice; // Shoe Care only
+
+    // Express-only configuration. Null for other service categories.
+    private String turnaround; // same-day, next-day, or another configured option
+    private String pricingUnit; // PER_KG or PER_JOB
+
+    // Express-only options; other service categories keep an empty list.
+    @OneToMany(mappedBy = "service", cascade = CascadeType.ALL, orphanRemoval = true)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @lombok.ToString.Exclude
+    @lombok.EqualsAndHashCode.Exclude
+    private java.util.List<ExpressPricingOption> expressPricingOptions =
+            new java.util.ArrayList<>();
 
     @Column(nullable = false)
     private String category;
