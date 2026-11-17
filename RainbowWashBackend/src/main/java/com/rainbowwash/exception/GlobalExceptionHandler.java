@@ -1,6 +1,7 @@
 package com.rainbowwash.exception;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -44,6 +45,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDataIntegrity() {
         return response(HttpStatus.CONFLICT, "The request conflicts with existing data", Map.of());
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException exception) {
+        return response(HttpStatus.FORBIDDEN,
+                "You do not have permission to apply a discount", Map.of());
     }
 
     @ExceptionHandler(Exception.class)

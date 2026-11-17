@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -39,6 +40,10 @@ public class OrderRequest {
 
     @DecimalMin(value = "0.00", message = "Delivery fee cannot be negative")
     private BigDecimal deliveryFee;
+
+   @DecimalMin(value = "0.00", message = "Discount percentage cannot be negative")
+   @DecimalMax(value = "100.00", message = "Discount percentage cannot exceed 100")
+   private BigDecimal discountPercentage;
 
     @NotBlank(message = "Full name is required")
     @Size(max = 120, message = "Full name must be 120 characters or fewer")

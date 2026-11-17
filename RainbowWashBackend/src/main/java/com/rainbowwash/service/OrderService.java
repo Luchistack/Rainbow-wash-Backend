@@ -7,6 +7,11 @@ import com.rainbowwash.model.Order;
 import com.rainbowwash.model.OrderItem;
 import com.rainbowwash.repository.OrderRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import java.math.RoundingMode;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -37,7 +42,26 @@ public class OrderService {
                 ? (request.getDeliveryFee() != null ? request.getDeliveryFee() : new BigDecimal("2500.00"))
                 : BigDecimal.ZERO;
         order.setDeliveryFee(deliveryFee);
-        order.setTotal(request.getTotal());
+
+        BigDecimal discountPercentage = request.getDiscountPercentage() == null
+                ? BigDecimal.ZERO : request.getDiscountPercentage();
+        BigDecimal discountAmount = BigDecimal.ZERO;
+
+        if (discountPercentage.compareTo(BigDecimal.ZERO) > 0) {
+            requireDiscountPermission();
+
+            BigDecimal serviceSubtotal = request.getItems().stream()
+                    .map(item -> item.getQty().multiply(item.getPrice()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            discountAmount = serviceSubtotal
+                    .multiply(discountPercentage)
+                    .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+        }
+
+        order.setDiscountPercentage(discountPercentage);
+        order.setDiscountAmount(discountAmount);
+        order.setTotal(request.getTotal().subtract(discountAmount));
         order.setStatus("Received");
         order.setFullName(request.getFullName());
         order.setPhone(request.getPhone());
@@ -61,6 +85,22 @@ public class OrderService {
         order.setItems(items);
 
         return orderRepository.save(order);
+    }
+
+    private void requireDiscountPermission() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        boolean allowed = authentication != null
+                && authentication.isAuthenticated()
+                && !(authentication instanceof AnonymousAuthenticationToken)
+                && authentication.getAuthorities().stream().anyMatch(authority ->
+                        authority.getAuthority().equals("ROLE_STAFF")
+                                || authority.getAuthority().equals("ROLE_MANAGER")
+                                || authority.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!allowed) {
+            throw new AccessDeniedException("You do not have permission to apply a discount");
+        }
     }
 
     public List<Order> getAllOrders() {

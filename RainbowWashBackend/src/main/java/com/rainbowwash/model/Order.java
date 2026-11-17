@@ -38,6 +38,12 @@ public class Order {
 
     private BigDecimal deliveryFee = BigDecimal.ZERO;
 
+    @Column(precision = 5, scale = 2)
+    private BigDecimal discountPercentage = BigDecimal.ZERO;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+
     private String status; // "Received" | "Washing" | "Completed" | "Delivered"
 
     private String fullName;

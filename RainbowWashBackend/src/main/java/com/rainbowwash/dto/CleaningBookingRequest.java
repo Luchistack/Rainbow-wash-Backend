@@ -3,6 +3,7 @@ package com.rainbowwash.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -32,6 +33,10 @@ public class CleaningBookingRequest {
     @NotNull(message = "Payable amount is required")
     @DecimalMin(value = "0.01", message = "Payable amount must be greater than zero")
     private BigDecimal payable;
+
+   @DecimalMin(value = "0.00", message = "Discount percentage cannot be negative")
+   @DecimalMax(value = "100.00", message = "Discount percentage cannot exceed 100")
+   private BigDecimal discountPercentage;
 
     @Size(max = 500, message = "Transfer note must be 500 characters or fewer")
     private String transferNote;

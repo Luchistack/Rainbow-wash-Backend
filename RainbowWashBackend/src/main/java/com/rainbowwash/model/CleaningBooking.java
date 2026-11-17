@@ -21,6 +21,11 @@ public class CleaningBooking {
     private String address;
     private String payType;
     private BigDecimal payable;
+    @Column(precision = 5, scale = 2)
+    private BigDecimal discountPercentage = BigDecimal.ZERO;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal discountAmount = BigDecimal.ZERO;
     private String transferNote;
     private String paymentStatus;
     private String paymentMethod = "Transfer"; // "Transfer" | "Card"

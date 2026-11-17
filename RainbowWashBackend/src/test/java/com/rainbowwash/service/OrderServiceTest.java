@@ -6,6 +6,7 @@ import com.rainbowwash.dto.OrderUpdateRequest;
 import com.rainbowwash.model.Order;
 import com.rainbowwash.repository.OrderRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,6 +16,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -120,6 +125,45 @@ class OrderServiceTest {
         update.setStatus("Washing");
 
         assertThrows(RuntimeException.class, () -> orderService.updateOrder(999L, update));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private void authenticateAs(String role) {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "dashboard-user", "password",
+                        List.of(new SimpleGrantedAuthority(role))));
+    }
+
+    @Test
+    void createOrder_appliesDiscountForStaffManagerAndAdmin() {
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        for (String role : List.of("ROLE_STAFF", "ROLE_MANAGER", "ROLE_ADMIN")) {
+            authenticateAs(role);
+            orderRequest.setDiscountPercentage(new BigDecimal("10"));
+
+            Order result = orderService.createOrder(orderRequest);
+
+            assertEquals(0, new BigDecimal("10").compareTo(result.getDiscountPercentage()));
+            assertEquals(0, new BigDecimal("950.00").compareTo(result.getDiscountAmount()));
+            assertEquals(0, new BigDecimal("8550.00").compareTo(result.getTotal()));
+        }
+    }
+
+    @Test
+    void createOrder_rejectsDiscountWithoutAuthenticatedDashboardUser() {
+        orderRequest.setDiscountPercentage(new BigDecimal("10"));
+
+        assertThrows(AccessDeniedException.class,
+                () -> orderService.createOrder(orderRequest));
+
         verify(orderRepository, never()).save(any(Order.class));
     }
 }

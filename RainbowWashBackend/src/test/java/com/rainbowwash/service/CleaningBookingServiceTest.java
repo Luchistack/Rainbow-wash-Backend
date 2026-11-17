@@ -4,6 +4,7 @@ import com.rainbowwash.dto.CleaningBookingRequest;
 import com.rainbowwash.model.CleaningBooking;
 import com.rainbowwash.repository.CleaningBookingRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -13,10 +14,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
+import com.rainbowwash.dto.CleaningBookingUpdateRequest;
 
 @ExtendWith(MockitoExtension.class)
 class CleaningBookingServiceTest {
@@ -87,5 +94,89 @@ class CleaningBookingServiceTest {
         assertEquals("Standard Cleaning", bookings.get(0).getService());
 
         verify(cleaningBookingRepository, times(1)).findAll();
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private void authenticateAs(String role) {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "dashboard-user", "password",
+                        List.of(new SimpleGrantedAuthority(role))));
+    }
+
+    @Test
+    void createBooking_appliesDiscountForStaffManagerAndAdmin() {
+        when(cleaningBookingRepository.save(any(CleaningBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        for (String role : List.of("ROLE_STAFF", "ROLE_MANAGER", "ROLE_ADMIN")) {
+            authenticateAs(role);
+            request.setDiscountPercentage(new BigDecimal("5"));
+
+            CleaningBooking result = cleaningBookingService.createBooking(request);
+
+            assertEquals(0, new BigDecimal("5").compareTo(result.getDiscountPercentage()),
+                    role + " should be allowed to apply a cleaning discount");
+            assertEquals(0, new BigDecimal("1000.00").compareTo(result.getDiscountAmount()),
+                    role + " should receive the correct cleaning discount amount");
+            assertEquals(0, new BigDecimal("20000.00").compareTo(result.getPayable()),
+                    role + " should leave the original payable unchanged");
+        }
+    }
+
+    @Test
+    void createBooking_rejectsDiscountWithoutAuthenticatedDashboardUser() {
+        request.setDiscountPercentage(new BigDecimal("5"));
+
+        assertThrows(AccessDeniedException.class,
+                () -> cleaningBookingService.createBooking(request));
+
+        verify(cleaningBookingRepository, never()).save(any(CleaningBooking.class));
+    }
+
+    @Test
+    void updateBooking_recalculatesDiscountWhenPayableChanges() {
+        CleaningBooking existing = new CleaningBooking();
+        existing.setId(10L);
+        existing.setPayable(new BigDecimal("20000"));
+        existing.setDiscountPercentage(new BigDecimal("5"));
+        existing.setDiscountAmount(new BigDecimal("1000"));
+
+        when(cleaningBookingRepository.findById(10L)).thenReturn(Optional.of(existing));
+        when(cleaningBookingRepository.save(any(CleaningBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CleaningBookingUpdateRequest update = new CleaningBookingUpdateRequest();
+        update.setPayable(new BigDecimal("30000"));
+
+        CleaningBooking result = cleaningBookingService.updateBooking(10L, update);
+
+        assertEquals(0, new BigDecimal("30000").compareTo(result.getPayable()));
+        assertEquals(0, new BigDecimal("1500.00").compareTo(result.getDiscountAmount()));
+    }
+
+    @Test
+    void updateBooking_preservesDiscountWhenOnlyStatusChanges() {
+        CleaningBooking existing = new CleaningBooking();
+        existing.setId(11L);
+        existing.setPayable(new BigDecimal("20000"));
+        existing.setDiscountPercentage(new BigDecimal("5"));
+        existing.setDiscountAmount(new BigDecimal("1000"));
+
+        when(cleaningBookingRepository.findById(11L)).thenReturn(Optional.of(existing));
+        when(cleaningBookingRepository.save(any(CleaningBooking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CleaningBookingUpdateRequest update = new CleaningBookingUpdateRequest();
+        update.setStatus("Confirmed");
+
+        CleaningBooking result = cleaningBookingService.updateBooking(11L, update);
+
+        assertEquals("Confirmed", result.getStatus());
+        assertEquals(0, new BigDecimal("1000").compareTo(result.getDiscountAmount()));
     }
 }
