@@ -33,6 +33,7 @@ public class CleaningBookingController {
 
     // Staff/Manager/Admin only (any authenticated dashboard user) — content edits
     // are further restricted client-side once printed, per the PRD's locking rule.
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
     @PatchMapping("/{id}")
     public ResponseEntity<CleaningBooking> updateBooking(@PathVariable Long id, @Valid @RequestBody CleaningBookingUpdateRequest request) {
         return ResponseEntity.ok(bookingService.updateBooking(id, request));

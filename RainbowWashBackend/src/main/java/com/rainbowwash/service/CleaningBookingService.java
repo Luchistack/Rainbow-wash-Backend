@@ -84,28 +84,53 @@ public class CleaningBookingService {
         return bookingRepository.findAll();
     }
 
-    // Partial update — only the fields staff actually change from the dashboard
-    // (status, confirmed price, payment status, archived, printed). Never touches
-    // customer-entered fields like name/phone/service, matching the "content is
-    // locked after submission" rule from the PRD.
+    // Manager/Admin can edit all booking details, including records already printed.
+    // Omitted fields remain unchanged so existing dashboard partial updates continue to work.
     public CleaningBooking updateBooking(Long id, CleaningBookingUpdateRequest request) {
         CleaningBooking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
 
-        if (request.getStatus() != null) booking.setStatus(request.getStatus());
-        if (request.getPayable() != null) {
-            booking.setPayable(request.getPayable());
-            BigDecimal percentage = booking.getDiscountPercentage() == null
-                    ? BigDecimal.ZERO : booking.getDiscountPercentage();
-            BigDecimal amount = request.getPayable()
-                    .multiply(percentage)
-                    .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
-            booking.setDiscountAmount(amount);
-        }
+        if (request.getFullName() != null) booking.setFullName(request.getFullName());
+        if (request.getPhone() != null) booking.setPhone(request.getPhone());
+        if (request.getEmail() != null) booking.setEmail(request.getEmail());
+        if (request.getDescription() != null) booking.setDescription(request.getDescription());
+
+        if (request.getService() != null) booking.setService(request.getService());
+        if (request.getSize() != null) booking.setSize(request.getSize());
+        if (request.getDate() != null) booking.setBookingDate(request.getDate());
+        if (request.getTime() != null) booking.setBookingTime(request.getTime());
+        if (request.getAddress() != null) booking.setAddress(request.getAddress());
+        if (request.getPayType() != null) booking.setPayType(request.getPayType());
+        if (request.getTransferNote() != null) booking.setTransferNote(request.getTransferNote());
+
         if (request.getPaymentStatus() != null) booking.setPaymentStatus(request.getPaymentStatus());
+        if (request.getPaymentMethod() != null) booking.setPaymentMethod(request.getPaymentMethod());
+        if (request.getStatus() != null) booking.setStatus(request.getStatus());
         if (request.getArchived() != null) booking.setArchived(request.getArchived());
         if (request.getPrinted() != null) booking.setPrinted(request.getPrinted());
-        if (request.getPaymentMethod() != null) booking.setPaymentMethod(request.getPaymentMethod());
+
+        if (request.getPayable() != null) booking.setPayable(request.getPayable());
+
+        BigDecimal discountPercentage = request.getDiscountPercentage() != null
+                ? request.getDiscountPercentage()
+                : (booking.getDiscountPercentage() == null ? BigDecimal.ZERO : booking.getDiscountPercentage());
+
+        if (request.getPayable() != null || request.getDiscountPercentage() != null) {
+            if (request.getDiscountPercentage() != null
+                    && discountPercentage.compareTo(BigDecimal.ZERO) > 0) {
+                requireDiscountPermission();
+            }
+
+            BigDecimal payable = booking.getPayable() == null
+                    ? BigDecimal.ZERO : booking.getPayable();
+
+            BigDecimal discountAmount = payable
+                    .multiply(discountPercentage)
+                    .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+
+            booking.setDiscountPercentage(discountPercentage);
+            booking.setDiscountAmount(discountAmount);
+        }
 
         return bookingRepository.save(booking);
     }

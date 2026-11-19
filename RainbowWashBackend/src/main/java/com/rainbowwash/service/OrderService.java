@@ -118,12 +118,88 @@ public class OrderService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Order not found"));
 
-        if (request.getStatus() != null) order.setStatus(request.getStatus());
-        if (request.getTotal() != null) order.setTotal(request.getTotal());
+        String previousFulfilment = order.getFulfilment();
+
+        if (request.getFullName() != null) order.setFullName(request.getFullName());
+        if (request.getPhone() != null) order.setPhone(request.getPhone());
+        if (request.getEmail() != null) order.setEmail(request.getEmail());
+        if (request.getDescription() != null) order.setDescription(request.getDescription());
+
+        if (request.getFulfilment() != null) order.setFulfilment(request.getFulfilment());
+        if (request.getAddress() != null) order.setAddress(request.getAddress());
+        if (request.getPreferredDate() != null) order.setPreferredDate(request.getPreferredDate());
+        if (request.getPreferredTime() != null) order.setPreferredTime(request.getPreferredTime());
+
+        if (request.getPaymentMethod() != null) order.setPaymentMethod(request.getPaymentMethod());
+        if (request.getTransferNote() != null) order.setTransferNote(request.getTransferNote());
         if (request.getPaymentStatus() != null) order.setPaymentStatus(request.getPaymentStatus());
+        if (request.getStatus() != null) order.setStatus(request.getStatus());
         if (request.getArchived() != null) order.setArchived(request.getArchived());
         if (request.getPrinted() != null) order.setPrinted(request.getPrinted());
-        if (request.getPaymentMethod() != null) order.setPaymentMethod(request.getPaymentMethod());
+
+        boolean itemsChanged = request.getItems() != null;
+        if (itemsChanged) {
+            if (request.getItems().isEmpty()) {
+                throw new IllegalArgumentException("An order must contain at least one item");
+            }
+
+            order.getItems().clear();
+
+            for (OrderItemRequest itemRequest : request.getItems()) {
+                OrderItem item = new OrderItem();
+                item.setOrder(order);
+                item.setName(itemRequest.getName());
+                item.setQty(itemRequest.getQty());
+                item.setUnit(itemRequest.getUnit());
+                item.setPrice(itemRequest.getPrice());
+                order.getItems().add(item);
+            }
+        }
+
+        if (request.getDeliveryFee() != null) {
+            order.setDeliveryFee(request.getDeliveryFee());
+        } else if ("dropoff".equalsIgnoreCase(order.getFulfilment())) {
+            order.setDeliveryFee(BigDecimal.ZERO);
+        } else if ("pickup".equalsIgnoreCase(order.getFulfilment())
+                && !"pickup".equalsIgnoreCase(previousFulfilment)) {
+            order.setDeliveryFee(new BigDecimal("2500.00"));
+        }
+
+        BigDecimal discountPercentage = request.getDiscountPercentage() != null
+                ? request.getDiscountPercentage()
+                : (order.getDiscountPercentage() == null ? BigDecimal.ZERO : order.getDiscountPercentage());
+
+        boolean discountChanged = request.getDiscountPercentage() != null;
+        boolean deliveryChanged = request.getDeliveryFee() != null || request.getFulfilment() != null;
+        boolean pricingComponentsChanged = itemsChanged || discountChanged || deliveryChanged;
+
+        if (pricingComponentsChanged) {
+            if (discountPercentage.compareTo(BigDecimal.ZERO) > 0) {
+                requireDiscountPermission();
+            }
+
+            BigDecimal serviceSubtotal = order.getItems().stream()
+                    .map(item -> item.getQty().multiply(item.getPrice()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            BigDecimal discountAmount = serviceSubtotal
+                    .multiply(discountPercentage)
+                    .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+
+            BigDecimal deliveryFee = order.getDeliveryFee() == null
+                    ? BigDecimal.ZERO : order.getDeliveryFee();
+
+            order.setDiscountPercentage(discountPercentage);
+            order.setDiscountAmount(discountAmount);
+            order.setTotal(serviceSubtotal.add(deliveryFee).subtract(discountAmount));
+        } else {
+            if (request.getTotal() != null) {
+                order.setTotal(request.getTotal());
+            }
+            if (discountChanged) {
+                order.setDiscountPercentage(discountPercentage);
+            }
+        }
 
         return orderRepository.save(order);
     }

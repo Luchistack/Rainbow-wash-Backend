@@ -44,6 +44,7 @@ public class OrderController {
     }
 
     // Authenticated (dashboard) — status, total, payment status, archived, printed.
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
     @PatchMapping("/{id}")
     public ResponseEntity<Order> updateOrder(@PathVariable Long id, @Valid @RequestBody OrderUpdateRequest request) {
         return ResponseEntity.ok(orderService.updateOrder(id, request));
