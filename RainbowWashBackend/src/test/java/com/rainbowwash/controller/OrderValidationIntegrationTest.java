@@ -9,8 +9,10 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -69,6 +71,39 @@ class OrderValidationIntegrationTest {
                 .andExpect(jsonPath("$.fieldErrors.email").exists());
 
         org.junit.jupiter.api.Assertions.assertEquals(0, orderRepository.count());
+    }
+
+    @Test
+    @WithMockUser(username = "staff.test@rainbowwash.com", roles = "STAFF")
+    void staffCanUpdateOrderStatus() throws Exception {
+        String payload = """
+                {
+                  "items":[{"name":"Wash & Dry","qty":2,"unit":"kg","price":1500}],
+                  "fulfilment":"dropoff","paymentMethod":"bank","total":3000,
+                  "fullName":"Test Customer","phone":"08030001122"
+                }
+                """;
+
+        String response = mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Long orderId = objectMapper.readTree(response).get("id").asLong();
+
+        mockMvc.perform(patch("/api/orders/" + orderId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"Washing\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("Washing"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "Washing",
+                orderRepository.findById(orderId).orElseThrow().getStatus()
+        );
     }
 
     @Test
