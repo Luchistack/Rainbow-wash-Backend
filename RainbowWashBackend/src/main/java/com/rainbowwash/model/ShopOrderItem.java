@@ -37,4 +37,10 @@ public class ShopOrderItem {
 
     @Column(nullable = false)
     private BigDecimal price;
+
+    @Column(name = "product_id")
+    private Long productId;
+
+    @Column(name = "stock_deducted")
+    private Boolean stockDeducted = false;
 }

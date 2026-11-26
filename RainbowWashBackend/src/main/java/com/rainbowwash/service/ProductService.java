@@ -30,6 +30,9 @@ public class ProductService {
         existing.setName(updated.getName());
         existing.setCategory(updated.getCategory());
         existing.setDescription(updated.getDescription());
+        if (updated.getUnit() != null && !updated.getUnit().isBlank()) {
+            existing.setUnit(updated.getUnit().trim());
+        }
         existing.setPrice(updated.getPrice());
         existing.setStock(updated.getStock());
         existing.setStatus(updated.getStatus());

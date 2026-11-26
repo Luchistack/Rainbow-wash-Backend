@@ -24,4 +24,7 @@ public class OrderItemRequest {
     @NotNull(message = "Price is required")
     @DecimalMin(value = "0.00", message = "Price cannot be negative")
     private BigDecimal price;
+
+    // Optional link to an Inventory product for dashboard walk-in orders.
+    private Long productId;
 }

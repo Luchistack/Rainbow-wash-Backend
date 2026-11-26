@@ -11,6 +11,8 @@ import java.math.BigDecimal;
 
 @Data
 public class ShopOrderItemRequest {
+    private Long productId;
+
     @NotBlank(message = "Product name is required")
     @Size(max = 160, message = "Product name must be 160 characters or fewer")
     private String name;

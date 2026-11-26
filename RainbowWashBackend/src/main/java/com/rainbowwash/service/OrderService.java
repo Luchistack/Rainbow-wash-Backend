@@ -6,6 +6,11 @@ import com.rainbowwash.dto.OrderUpdateRequest;
 import com.rainbowwash.model.Order;
 import com.rainbowwash.model.OrderItem;
 import com.rainbowwash.repository.OrderRepository;
+import com.rainbowwash.repository.ProductRepository;
+import com.rainbowwash.model.Product;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.Map;
+import java.util.TreeMap;
 import org.springframework.stereotype.Service;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -23,11 +28,14 @@ import java.util.stream.Collectors;
 public class OrderService {
 
     private final OrderRepository orderRepository;
+    private final ProductRepository productRepository;
 
-    public OrderService(OrderRepository orderRepository) {
+    public OrderService(OrderRepository orderRepository, ProductRepository productRepository) {
         this.orderRepository = orderRepository;
+        this.productRepository = productRepository;
     }
 
+    @Transactional
     public Order createOrder(OrderRequest request) {
         Order order = new Order();
         order.setReferenceId("LND-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase());
@@ -80,9 +88,12 @@ public class OrderService {
             item.setQty(itemReq.getQty());
             item.setUnit(itemReq.getUnit());
             item.setPrice(itemReq.getPrice());
+            item.setProductId(itemReq.getProductId());
+            item.setStockDeducted(false);
             return item;
         }).collect(Collectors.toList());
         order.setItems(items);
+        adjustInventory(items, true);
 
         return orderRepository.save(order);
     }
@@ -114,6 +125,7 @@ public class OrderService {
         return orderRepository.findByReferenceId(referenceId).orElse(null);
     }
 
+    @Transactional
     public Order updateOrder(Long id, OrderUpdateRequest request) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Order not found"));
@@ -143,6 +155,8 @@ public class OrderService {
                 throw new IllegalArgumentException("An order must contain at least one item");
             }
 
+            // Restore previously deducted items before replacing the lines.
+            adjustInventory(order.getItems(), false);
             order.getItems().clear();
 
             for (OrderItemRequest itemRequest : request.getItems()) {
@@ -152,8 +166,11 @@ public class OrderService {
                 item.setQty(itemRequest.getQty());
                 item.setUnit(itemRequest.getUnit());
                 item.setPrice(itemRequest.getPrice());
+                item.setProductId(itemRequest.getProductId());
+                item.setStockDeducted(false);
                 order.getItems().add(item);
             }
+            adjustInventory(order.getItems(), true);
         }
 
         if (request.getDeliveryFee() != null) {
@@ -207,7 +224,67 @@ public class OrderService {
     // Permanent removal — only called from the Admin-only History delete
     // action. Everything else (archive) is a soft, reversible-in-spirit
     // action that just hides a record from the Today's list.
+    @Transactional
     public void deleteOrder(Long id) {
-        orderRepository.deleteById(id);
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+        adjustInventory(order.getItems(), false);
+        orderRepository.delete(order);
+    }
+
+    /** Deducts or restores stock only for lines linked to Inventory products. */
+    private void adjustInventory(List<OrderItem> items, boolean deduct) {
+        Map<Long, Integer> quantities = new TreeMap<>();
+        for (OrderItem item : items) {
+            if (item.getProductId() == null) continue;
+            if (deduct == item.isStockDeducted()) continue;
+            int quantity;
+            try {
+                quantity = item.getQty().intValueExact();
+            } catch (ArithmeticException ex) {
+                throw new IllegalArgumentException(
+                        "Inventory product quantities must be whole numbers: " + item.getName());
+            }
+            if (quantity <= 0) {
+                throw new IllegalArgumentException("Inventory product quantity must be greater than zero");
+            }
+            quantities.merge(item.getProductId(), quantity, Math::addExact);
+        }
+
+        if (quantities.isEmpty()) return;
+
+        Map<Long, Product> lockedProducts = new TreeMap<>();
+        for (Long productId : quantities.keySet()) {
+            Product product = productRepository.findByIdForUpdate(productId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Inventory product not found: " + productId));
+            lockedProducts.put(productId, product);
+        }
+
+        if (deduct) {
+            for (Map.Entry<Long, Integer> entry : quantities.entrySet()) {
+                Product product = lockedProducts.get(entry.getKey());
+                if (product.getStock() < entry.getValue()) {
+                    throw new IllegalArgumentException(
+                            "Insufficient stock for " + product.getName()
+                                    + ". Available: " + product.getStock()
+                                    + ", requested: " + entry.getValue());
+                }
+            }
+        }
+
+        for (Map.Entry<Long, Integer> entry : quantities.entrySet()) {
+            Product product = lockedProducts.get(entry.getKey());
+            int quantity = entry.getValue();
+            product.setStock(deduct ? product.getStock() - quantity : product.getStock() + quantity);
+            productRepository.save(product);
+        }
+
+        for (OrderItem item : items) {
+            if (item.getProductId() != null) {
+                boolean shouldChange = deduct ? !item.isStockDeducted() : item.isStockDeducted();
+                if (shouldChange) item.setStockDeducted(deduct);
+            }
+        }
     }
 }

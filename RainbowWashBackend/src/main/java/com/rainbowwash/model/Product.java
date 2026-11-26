@@ -26,6 +26,8 @@ public class Product {
     private String category;
     @Size(max = 2000, message = "Description must be 2000 characters or fewer")
     private String description;
+    @Size(max = 50, message = "Unit must be 50 characters or fewer")
+    private String unit = "unit";
     @NotNull(message = "Product price is required")
     @DecimalMin(value = "0.00", message = "Product price cannot be negative")
     private BigDecimal price;

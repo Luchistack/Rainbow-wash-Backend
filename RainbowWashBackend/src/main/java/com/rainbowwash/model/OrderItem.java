@@ -46,4 +46,10 @@ public class OrderItem {
 
     @Column(nullable = false)
     private BigDecimal price;
+
+    // Optional Inventory link; null for ordinary Laundry service lines.
+    private Long productId;
+
+    // True only after this item has successfully deducted Inventory stock.
+    private boolean stockDeducted = false;
 }
